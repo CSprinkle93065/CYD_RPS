@@ -118,7 +118,7 @@ CYD_RPS setup done
 | Integration code review | PASS |
 | Wokwi smoke test | SKIPPED — `WOKWI_CLI_TOKEN` not exported in the current shell; reference trace from prior run passes |
 | Physical target tests | MANUAL / HARDWARE-ONLY — no board attached |
-| GitHub release | SKIPPED — repository `CSprinkle93065/CYD_RPS` does not exist on GitHub and no git remote is configured |
+| GitHub release | PASS — release `v0.1.6` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.6 with `firmware.bin` and `CYD_RPS_v0.1.6.zip` attached |
 
 See `docs/qa_results.md` for the full QA report.
 
@@ -126,13 +126,15 @@ See `docs/qa_results.md` for the full QA report.
 
 ## GitHub Release
 
-**GitHub release skipped — repository does not exist and no remote is configured.**
+**GitHub release created successfully.**
 
-- Inferred repository `CSprinkle93065/CYD_RPS` does not exist on GitHub (`gh repo view CSprinkle93065/CYD_RPS` returned "Could not resolve to a Repository").
-- The local git repository has no remotes configured (`git remote -v` returns empty).
-- The `gh` CLI is installed and authenticated as `CSprinkle93065`, but a release cannot be created until the repository is created and a remote is added.
-- Local artifacts (`firmware.bin` and `CYD_RPS_v0.1.6.zip`) are available under `projects/CYD_RPS/dist/` for manual distribution.
-- To create a release in the future, create the repository `https://github.com/CSprinkle93065/CYD_RPS`, add it as a remote, push the project, and re-run the Release Agent.
+- Repository: https://github.com/CSprinkle93065/CYD_RPS
+- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.6
+- Tag: `v0.1.6`
+- Attachments:
+  - `firmware.bin`
+  - `CYD_RPS_v0.1.6.zip`
+- Local commit and tag were pushed to `origin/master`.
 
 ---
 
