@@ -1,8 +1,8 @@
 # CYD_RPS — Release Context
 
 **Project:** CYD_RPS  
-**Version:** 0.1.6  
-**Workflow ID:** wvc_20260619_034654  
+**Version:** 0.1.7  
+**Workflow ID:** wvc_20260619_134606  
 **Revision Type:** bug_fix  
 **Release Date:** 2026-06-19  
 **Board Version:** CYD2USB_v3 (ESP32-2432S028R)  
@@ -14,21 +14,18 @@
 
 ## Bug-Fix Summary
 
-This release fixes the two-player multiplayer connection failure reported in v0.1.5 (`docs/BugReport_CYD_RPS_v0.1.5.md`).
+This release fixes the JOIN-side BLE connection failure reported in v0.1.6 (`docs/BugReport_CYD_RPS_v0.1.6.md` §8.5).
 
-The v0.1.5 release captured the peer BLE address type from scan advertisements and used that type in `NimBLEClient::connect()`, which resolved the immediate `E NimBLEClient: Connection failed; status=13` caused by a public/random address mismatch. However, two-board multiplayer still failed because the JOIN/HOST role-negotiation sequence was asymmetric: the JOIN stopped advertising when it resolved its role, so the HOST never discovered the JOIN and eventually timed out to standalone gameplay; the JOIN then attempted to connect to a HOST that was not ready.
+After v0.1.6 made role negotiation symmetric, the JOIN still remained a peripheral advertiser while attempting to act as a central and connect to the HOST. The ESP32 NimBLE controller rejected the connection with `E NimBLEClient: Connection failed; status=13` (`BLE_ERR_CONN_REJ_RESOURCES`). Each failed attempt blocked for the default 30 s connect timeout, producing an apparent indefinite "Connecting" stall.
 
 | Fix | Location | Details |
 |-----|----------|---------|
-| JOIN keeps advertising during role negotiation | `src/state_machine/ble_service.cpp` | `BleService::become_join()` calls `stop_scanning()` but deliberately does **not** call `stop_advertising()`, so the peer that becomes HOST can still discover the JOIN and resolve its own role. |
-| JOIN retries the HOST connection | `src/state_machine/ble_service.cpp` | `connect_to_host()` loops up to `kConnectRetries` (4) attempts with `kConnectRetryDelayMs` (250 ms) backoff before posting `EV_ERROR`. |
-| Public MAC embedded in advertisement payload | `src/state_machine/ble_service.cpp` | `start_advertising()` adds manufacturer data with `kManufacturerCompanyId` (0xFFFF) followed by the 6-byte public MAC (`NimBLEDevice::getAddress()`). |
-| Peer public MAC extracted from scan payload | `src/state_machine/ble_service.cpp` | `RpsAdvertisedDeviceCallbacks::onResult()` parses the manufacturer data and passes the public MAC to `on_peer_found()`. |
-| Role resolution uses stable public MAC | `src/state_machine/ble_service.cpp` | `resolve_role()` compares local/peer public MACs when available; otherwise falls back to the random advertisement address. |
-| HOST does not regenerate random address | `src/state_machine/ble_service.cpp` | `become_host()` calls `start_advertising()`, which returns immediately if advertising is already active. |
-| In-file comments referencing bug report | `src/state_machine/ble_service.cpp` / `ble_service.h` | Comments cite `docs/BugReport_CYD_RPS_v0.1.5.md` §6.1–6.4 and §8.1–8.4. |
+| JOIN stops advertising before connecting | `src/state_machine/ble_service.cpp` | `BleService::connect_to_host()` calls `stop_advertising()` after creating the `NimBLEClient` and before the retry loop, removing the controller resource conflict. |
+| Reduced NimBLE connect timeout | `src/state_machine/ble_service.h` / `ble_service.cpp` | Added `kConnectTimeoutSeconds = 5` and called `cli->setConnectTimeout(kConnectTimeoutSeconds)` before the first `connect()` attempt, reducing the per-attempt timeout from 30 s to 5 s. |
+| Restart advertising on connection failure | `src/state_machine/ble_service.cpp` | If all retries fail, `connect_to_host()` calls `start_advertising()` before posting `EV_ERROR`, keeping the unit discoverable for a subsequent negotiation cycle. |
+| In-file rationale comments | `src/state_machine/ble_service.cpp` / `ble_service.h` | Comments cite `docs/BugReport_CYD_RPS_v0.1.6.md` §8.5–8.6. |
 
-This v0.1.6 fix preserves all v0.1.4 and v0.1.5 fixes: GATT server start during `init()`, address-type capture in `peer_addr_type_`, dedicated BLE radio task, larger NimBLE host-task stack, heap guard, reduced LVGL memory, deferred discovery out of LVGL event context, and thread-safe event queue.
+This v0.1.7 fix preserves all v0.1.4–v0.1.6 fixes: GATT server start during `init()`, address-type capture in `peer_addr_type_`, dedicated BLE radio task, larger NimBLE host-task stack, heap guard, reduced LVGL memory, deferred discovery out of LVGL event context, thread-safe event queue, symmetric role negotiation using the public MAC, and the `WOKWI_SIMULATION` guard.
 
 ---
 
@@ -36,7 +33,7 @@ This v0.1.6 fix preserves all v0.1.4 and v0.1.5 fixes: GATT server start during 
 
 | Artifact | Path |
 |----------|------|
-| Release ZIP | `projects/CYD_RPS/dist/CYD_RPS_v0.1.6.zip` |
+| Release ZIP | `projects/CYD_RPS/dist/CYD_RPS_v0.1.7.zip` |
 | Firmware binary | `firmware.bin` (inside ZIP and at `projects/CYD_RPS/.pio/build/esp32-2432s028r_cyd2usb/firmware.bin`) |
 | Build configuration | `platformio.ini` (inside ZIP) |
 | Flash scripts | `flash_esptool.bat`, `flash_esptool.sh`, `flash_cyd_rps.bat` (inside ZIP) |
@@ -50,7 +47,7 @@ ZIP contents verified:
 - `flash_esptool.sh`
 - `flash_cyd_rps.bat`
 
-Firmware size: 976,496 bytes.
+Firmware size: 976,544 bytes.
 
 ---
 
@@ -99,7 +96,7 @@ CYD_RPS setup done
 |------------|---------|
 | BLE multiplayer requires physical hardware | NimBLE/BLE initialization is skipped under `WOKWI_SIMULATION` to avoid emulator watchdog issues. Multiplayer peer discovery, role negotiation, and peer move exchange require two physical CYD2USB v3 boards. |
 | Wokwi touch not simulated | The Wokwi CLI does not support the `wokwi-xpt2046` touch part (LL-032). Touch-driven flows are validated by code review and require physical hardware. |
-| Two-board connection verification is manual | The end-to-end two-board multiplayer connection flow must be verified manually because no CYD2USB board is detected on the host USB ports and Wokwi does not emulate NimBLE reliably. It is documented as manual verification in `docs/qa_results.md` §6.1. |
+| Two-board connection verification is manual | The end-to-end two-board multiplayer connection flow must be verified manually because no CYD2USB board is detected on the host USB ports and Wokwi does not emulate NimBLE reliably. It is documented as manual verification in `docs/qa_results.md` §5.1. |
 | No score persistence | Round history and scores are RAM-only; they reset on every reboot. |
 | Host tests use a Python model | The 40 host state-machine tests execute a Python mirror of the generated C++ state machine because no host C++ compiler is available and the firmware depends on Arduino/LVGL/NimBLE. The model is derived directly from `src/state_machine/state_machine_generated.cpp` and `docs/state_machine.puml`. |
 
@@ -114,11 +111,11 @@ CYD_RPS setup done
 | Host state-machine tests (40/40) | PASS |
 | Static analysis (`pio check`) | PASS |
 | Distribution ZIP complete | PASS |
-| Bug-fix code review (role-negotiation root cause) | PASS |
+| Bug-fix code review (JOIN connection resource conflict) | PASS |
 | Integration code review | PASS |
-| Wokwi smoke test | SKIPPED — `WOKWI_CLI_TOKEN` not exported in the current shell; reference trace from prior run passes |
+| Wokwi smoke test | PASS |
 | Physical target tests | MANUAL / HARDWARE-ONLY — no board attached |
-| GitHub release | PASS — release `v0.1.6` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.6 with `firmware.bin` and `CYD_RPS_v0.1.6.zip` attached |
+| GitHub release | PASS — release `v0.1.7` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.7 with `firmware.bin` and `CYD_RPS_v0.1.7.zip` attached |
 
 See `docs/qa_results.md` for the full QA report.
 
@@ -129,12 +126,12 @@ See `docs/qa_results.md` for the full QA report.
 **GitHub release created successfully.**
 
 - Repository: https://github.com/CSprinkle93065/CYD_RPS
-- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.6
-- Tag: `v0.1.6`
+- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.7
+- Tag: `v0.1.7`
 - Attachments:
   - `firmware.bin`
-  - `CYD_RPS_v0.1.6.zip`
-- Local commit and tag were pushed to `origin/master`.
+  - `CYD_RPS_v0.1.7.zip`
+- Local commit and tag were pushed to `origin/main`.
 
 ---
 
