@@ -1,0 +1,114 @@
+@startuml
+
+title CYD_RPS Rock-Paper-Scissors State Machine
+
+' Initial pseudo-state
+[*] --> Boot
+
+' Named leaf states (no composite states, no terminal [*] targets)
+state Boot
+state Start
+state PeerSearch
+state RoleNegotiating
+state Connecting
+state Gameplay
+state SinglePlayerFallback
+state Evaluating
+state Result
+state Disconnected
+state Error
+state Halted
+
+' ---------- Boot ----------
+Boot --> Start : EV_BOOT_DONE [init_ok] / app_init_success()
+Boot --> Error : EV_ERROR [ble_init_failed] / app_on_error_ble()
+Boot --> Halted : EV_ERROR [hw_init_failed] / app_on_error_hw()
+
+' ---------- Start ----------
+Start --> PeerSearch : EV_PLAY / on_play_button()
+Start --> Error : EV_ERROR / app_on_error()
+
+' ---------- Peer search / fallback ----------
+PeerSearch --> RoleNegotiating : EV_PEER_FOUND / on_peer_found()
+PeerSearch --> SinglePlayerFallback : EV_PEER_TIMEOUT / on_discovery_timeout()
+PeerSearch --> Start : EV_CANCEL / on_cancel_button()
+PeerSearch --> Error : EV_ERROR / app_on_error()
+
+' ---------- Role negotiation ----------
+RoleNegotiating --> Connecting : EV_ROLE_RESOLVED [role_host] / start_advertising_host()
+RoleNegotiating --> Connecting : EV_ROLE_RESOLVED [role_join] / start_scanning_join()
+RoleNegotiating --> Error : EV_ERROR / app_on_error()
+
+' ---------- Connection ----------
+Connecting --> Gameplay : EV_CONNECTED / on_peer_connected()
+Connecting --> Disconnected : EV_DISCONNECTED / on_peer_disconnected()
+Connecting --> Error : EV_ERROR / app_on_error()
+
+' ---------- Multi-player gameplay ----------
+Gameplay --> Evaluating : EV_MOVE_ROCK [peer_move_received] / on_local_move_rock_complete()
+Gameplay --> Evaluating : EV_MOVE_PAPER [peer_move_received] / on_local_move_paper_complete()
+Gameplay --> Evaluating : EV_MOVE_SCISSORS [peer_move_received] / on_local_move_scissors_complete()
+
+Gameplay --> Gameplay : EV_MOVE_ROCK [!peer_move_received] / on_local_move_rock_pending()
+Gameplay --> Gameplay : EV_MOVE_PAPER [!peer_move_received] / on_local_move_paper_pending()
+Gameplay --> Gameplay : EV_MOVE_SCISSORS [!peer_move_received] / on_local_move_scissors_pending()
+
+Gameplay --> Evaluating : EV_PEER_MOVE_RECEIVED [local_move_chosen] / on_peer_move_complete()
+Gameplay --> Gameplay : EV_PEER_MOVE_RECEIVED [!local_move_chosen] / on_peer_move_pending()
+
+Gameplay --> Disconnected : EV_DISCONNECTED / on_peer_disconnected()
+Gameplay --> Error : EV_ERROR / app_on_error()
+
+' ---------- Single-player fallback ----------
+SinglePlayerFallback --> Evaluating : EV_MOVE_ROCK / on_singleplayer_move_rock()
+SinglePlayerFallback --> Evaluating : EV_MOVE_PAPER / on_singleplayer_move_paper()
+SinglePlayerFallback --> Evaluating : EV_MOVE_SCISSORS / on_singleplayer_move_scissors()
+SinglePlayerFallback --> Error : EV_ERROR / app_on_error()
+
+' ---------- Evaluation ----------
+Evaluating --> Result : EV_EVALUATE / evaluate_and_show_result()
+Evaluating --> Error : EV_ERROR / app_on_error()
+
+' ---------- Result / new round ----------
+Result --> Gameplay : EV_PLAY_AGAIN [game_mode == MODE_MULTI_PLAYER] / start_new_round()
+Result --> SinglePlayerFallback : EV_PLAY_AGAIN [game_mode == MODE_SINGLE_PLAYER] / start_new_round()
+Result --> Disconnected : EV_DISCONNECTED / on_peer_disconnected()
+Result --> Error : EV_ERROR / app_on_error()
+
+' ---------- Disconnected / error handling ----------
+Disconnected --> Start : EV_RETRY / reset_and_return_start()
+Disconnected --> Error : EV_ERROR / app_on_error()
+
+Error --> Start : EV_RETRY / reset_and_return_start()
+Error --> Halted : EV_ERROR [fatal] / app_on_error_fatal()
+
+' ---------- UI-to-State contract note block ----------
+note as UIContract
+  UI-to-State Contract (see state_machine_contract.json for the full binding):
+
+  SCR_Start:
+    - btnPlay click         -> post EV_PLAY      -> Start --> PeerSearch
+    - lblStatusStart text   -> updated by app_init_success() / on_entry to Start
+
+  SCR_PeerSearch:
+    - btnCancel click       -> post EV_CANCEL    -> PeerSearch --> Start
+    - barSearch value       -> driven by discovery timer (ui_set_search_progress)
+    - lblTimeout text       -> driven by discovery countdown timer
+
+  SCR_Gameplay (also used by SinglePlayerFallback):
+    - btnRock click         -> post EV_MOVE_ROCK
+    - btnPaper click        -> post EV_MOVE_PAPER
+    - btnScissors click     -> post EV_MOVE_SCISSORS
+    - move buttons disabled after a move is chosen, re-enabled on new round
+
+  SCR_Result:
+    - btnPlayAgain click    -> post EV_PLAY_AGAIN -> Result --> Gameplay or SinglePlayerFallback
+
+  SCR_Error:
+    - btnRetry click        -> post EV_RETRY      -> Error/Disconnected --> Start
+    - lblErrorMsg text      -> set by app_on_error_*() actions
+
+  Disconnected and Halted reuse SCR_Error / SCR_Start visuals as noted in contract.
+end note
+
+@enduml

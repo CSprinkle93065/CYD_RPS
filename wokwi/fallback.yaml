@@ -1,0 +1,15 @@
+name: CYD_RPS Wokwi single-player fallback
+version: 1
+steps:
+  - wait-serial: "CYD_RPS setup done"
+  - delay: 500ms
+  - touch:
+      part-id: lcd
+      x: 120
+      y: 170
+      duration: 100ms
+      wait: true
+  - delay: 500ms
+  - wait-serial: "UI: Play button clicked"
+  - wait-serial: "CYD_RPS: Wokwi - BLE skipped, forcing single-player fallback"
+  - wait-serial: "No peer found"

@@ -1,0 +1,8 @@
+name: CYD_RPS screenshot
+version: 1
+steps:
+  - wait-serial: "CYD_RPS setup done"
+  - delay: 500ms
+  - take-screenshot:
+      part-id: lcd
+      save-to: wokwi_screen.png

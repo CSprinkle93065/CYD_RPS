@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "author": "MAOA CYD2USB Workflow",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": { "fullBoot": "1" }
+    },
+    {
+      "type": "wokwi-ili9341",
+      "id": "lcd",
+      "top": -100,
+      "left": 220,
+      "attrs": {}
+    }
+  ],
+  "connections": [
+    ["esp:TX0", "$serialMonitor:RX", "", []],
+    ["esp:RX0", "$serialMonitor:TX", "", []],
+    ["esp:GND.1", "lcd:GND", "black", []],
+    ["esp:3V3", "lcd:VCC", "red", []],
+    ["esp:3V3", "lcd:LED", "red", []],
+    ["esp:D13", "lcd:MOSI", "blue", []],
+    ["esp:D14", "lcd:SCK", "orange", []],
+    ["esp:D15", "lcd:CS", "green", []],
+    ["esp:D2", "lcd:D/C", "yellow", []],
+    ["esp:D12", "lcd:MISO", "purple", []]
+  ],
+  "serialMonitor": { "display": "terminal", "newline": "lf" },
+  "dependencies": {}
+}

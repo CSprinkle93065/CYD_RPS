@@ -1,0 +1,4 @@
+[wokwi]
+version = 1
+firmware = '.pio/build/esp32-2432s028r_cyd2usb_wokwi/firmware.bin'
+elf = '.pio/build/esp32-2432s028r_cyd2usb_wokwi/firmware.elf'

@@ -1,0 +1,5 @@
+name: CYD_RPS UI smoke test
+version: 1
+steps:
+  - wait-serial: "CYD_RPS setup start"
+  - wait-serial: "CYD_RPS setup done"

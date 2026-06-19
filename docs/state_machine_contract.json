@@ -1,0 +1,318 @@
+{
+  "metadata": {
+    "workflow_id": "wvc_20260617_044037",
+    "project_name": "CYD_RPS",
+    "version": "0.1.0",
+    "board_version": "CYD2USB_v3",
+    "target_environment": "wokwi",
+    "generated_at": "2026-06-17T12:26:59+08:00",
+    "contract_version": "1.0.0"
+  },
+  "state_machine_file": "docs/state_machine.puml",
+  "notes": [
+    "SCR_Gameplay is the visual screen for both the Gameplay and SinglePlayerFallback states.",
+    "SCR_Error is the visual screen for Error, Halted, and Disconnected states; the message text distinguishes them.",
+    "Controls that do not accept touch events bind to state-entry UI update actions rather than user input events."
+  ],
+  "bindings": [
+    {
+      "control_id": "lblTitle",
+      "screen": "SCR_Start",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_show_screen_start() sets static text 'CYD RPS' on entry to Start / Disconnected",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Start", "Disconnected"],
+        "hidden_in_states": ["Boot", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblSubtitle",
+      "screen": "SCR_Start",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_show_screen_start() sets static text 'Tap Play to find a peer' on entry to Start / Disconnected",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Start", "Disconnected"],
+        "hidden_in_states": ["Boot", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "btnPlay",
+      "screen": "SCR_Start",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_play_button_clicked() -> post_event(EV_PLAY)",
+      "transitions_driven": ["Start --> PeerSearch"],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Start"],
+        "hidden_in_states": ["Boot", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_in_states": ["Start"],
+        "disabled_in_states": ["Boot", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblStatusStart",
+      "screen": "SCR_Start",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_set_status() updates lblStatusStart on entry to Start / Disconnected",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Start", "Disconnected"],
+        "hidden_in_states": ["Boot", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblTitle",
+      "screen": "SCR_PeerSearch",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_show_screen_peer_search() sets static text 'CYD RPS' on entry to PeerSearch",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["PeerSearch"],
+        "hidden_in_states": ["Boot", "Start", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblStatusSearch",
+      "screen": "SCR_PeerSearch",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_set_status() updates lblStatusSearch from PeerSearch, RoleNegotiating, and Connecting entry actions",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["PeerSearch", "RoleNegotiating", "Connecting"],
+        "hidden_in_states": ["Boot", "Start", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "barSearch",
+      "screen": "SCR_PeerSearch",
+      "lvgl_object_type": "lv_bar",
+      "event": null,
+      "bound_state_machine_action": "ui_set_search_progress() updates barSearch value (0-100) during PeerSearch timer",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["PeerSearch"],
+        "hidden_in_states": ["Boot", "Start", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblTimeout",
+      "screen": "SCR_PeerSearch",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_set_status() updates lblTimeout countdown text during PeerSearch",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["PeerSearch"],
+        "hidden_in_states": ["Boot", "Start", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "btnCancel",
+      "screen": "SCR_PeerSearch",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_cancel_button_clicked() -> post_event(EV_CANCEL)",
+      "transitions_driven": ["PeerSearch --> Start"],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["PeerSearch"],
+        "hidden_in_states": ["Boot", "Start", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_in_states": ["PeerSearch"],
+        "disabled_in_states": ["Boot", "Start", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblTitle",
+      "screen": "SCR_Gameplay",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_show_screen_gameplay() sets static text 'Choose!' on entry to Gameplay / SinglePlayerFallback",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Gameplay", "SinglePlayerFallback"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblStatusGame",
+      "screen": "SCR_Gameplay",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_set_status() updates lblStatusGame from Gameplay / SinglePlayerFallback entry and move actions",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Gameplay", "SinglePlayerFallback"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "btnRock",
+      "screen": "SCR_Gameplay",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_rock_button_clicked() -> post_event(EV_MOVE_ROCK)",
+      "transitions_driven": [
+        "Gameplay --> Evaluating (when peer_move_received)",
+        "Gameplay --> Gameplay (when !peer_move_received)",
+        "SinglePlayerFallback --> Evaluating"
+      ],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Gameplay", "SinglePlayerFallback"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_rule": "enabled when local_move == MOVE_NONE; disabled by ui_set_move_buttons_enabled(false) after any move is chosen",
+        "enabled_in_states": ["Gameplay", "SinglePlayerFallback"],
+        "disabled_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "btnPaper",
+      "screen": "SCR_Gameplay",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_paper_button_clicked() -> post_event(EV_MOVE_PAPER)",
+      "transitions_driven": [
+        "Gameplay --> Evaluating (when peer_move_received)",
+        "Gameplay --> Gameplay (when !peer_move_received)",
+        "SinglePlayerFallback --> Evaluating"
+      ],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Gameplay", "SinglePlayerFallback"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_rule": "enabled when local_move == MOVE_NONE; disabled by ui_set_move_buttons_enabled(false) after any move is chosen",
+        "enabled_in_states": ["Gameplay", "SinglePlayerFallback"],
+        "disabled_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "btnScissors",
+      "screen": "SCR_Gameplay",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_scissors_button_clicked() -> post_event(EV_MOVE_SCISSORS)",
+      "transitions_driven": [
+        "Gameplay --> Evaluating (when peer_move_received)",
+        "Gameplay --> Gameplay (when !peer_move_received)",
+        "SinglePlayerFallback --> Evaluating"
+      ],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Gameplay", "SinglePlayerFallback"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_rule": "enabled when local_move == MOVE_NONE; disabled by ui_set_move_buttons_enabled(false) after any move is chosen",
+        "enabled_in_states": ["Gameplay", "SinglePlayerFallback"],
+        "disabled_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblTitle",
+      "screen": "SCR_Result",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_show_screen_result() sets static text 'Result' on entry to Result",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Result"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblLocalMove",
+      "screen": "SCR_Result",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_show_screen_result() sets text 'You: <move>' on entry to Result",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Result"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblPeerMove",
+      "screen": "SCR_Result",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_show_screen_result() sets text 'Peer: <move>' on entry to Result",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Result"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblOutcome",
+      "screen": "SCR_Result",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_show_screen_result() sets outcome text/color (WIN/LOSE/DRAW) on entry to Result",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Result"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "btnPlayAgain",
+      "screen": "SCR_Result",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_play_again_button_clicked() -> post_event(EV_PLAY_AGAIN)",
+      "transitions_driven": [
+        "Result --> Gameplay (when game_mode == MODE_MULTI_PLAYER)",
+        "Result --> SinglePlayerFallback (when game_mode == MODE_SINGLE_PLAYER)"
+      ],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Result"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"],
+        "enabled_in_states": ["Result"],
+        "disabled_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblErrorTitle",
+      "screen": "SCR_Error",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_show_screen_error() sets static text 'Error' on entry to Error / Halted / Disconnected",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Error", "Halted", "Disconnected"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result"]
+      }
+    },
+    {
+      "control_id": "lblErrorMsg",
+      "screen": "SCR_Error",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_show_screen_error() sets dynamic error message on entry to Error / Halted / Disconnected",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Error", "Halted", "Disconnected"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result"]
+      }
+    },
+    {
+      "control_id": "btnRetry",
+      "screen": "SCR_Error",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_retry_button_clicked() -> post_event(EV_RETRY)",
+      "transitions_driven": [
+        "Error --> Start",
+        "Disconnected --> Start"
+      ],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Error", "Disconnected"],
+        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Halted"],
+        "enabled_in_states": ["Error", "Disconnected"],
+        "disabled_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Halted"]
+      }
+    }
+  ]
+}

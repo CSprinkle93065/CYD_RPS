@@ -1,0 +1,213 @@
+{
+  "metadata": {
+    "workflow_id": "wvc_20260617_044037",
+    "project_name": "CYD_RPS",
+    "version": "0.1.0",
+    "board_version": "CYD2USB_v3",
+    "target_environment": "wokwi",
+    "generated_at": "2026-06-17T12:26:59+08:00",
+    "generator": "External Dependencies Agent (Stage 4)"
+  },
+  "framework": [
+    {
+      "name": "Arduino-ESP32",
+      "version": "3.20017.241212+sha.dcc1105b (Arduino-ESP32 2.0.17)",
+      "source": "framework-arduinoespressif32 package in PlatformIO espressif32 platform",
+      "present": true,
+      "required": true,
+      "test_result": "framework=arduino declared in platformio.ini; framework-arduinoespressif32 package installed"
+    }
+  ],
+  "platform": [
+    {
+      "name": "espressif32",
+      "version": "7.0.1",
+      "source": "PlatformIO registry / platformio/espressif32",
+      "present": true,
+      "required": true,
+      "test_result": "pio platform show espressif32 returned version 7.0.1"
+    }
+  ],
+  "board": [
+    {
+      "name": "esp32-2432s028r_cyd2usb",
+      "version": "n/a",
+      "source": "PlatformIO board registry (preferred CYD2USB board package)",
+      "present": false,
+      "required": true,
+      "test_result": "pio boards espressif32 | grep -i 2432/cyd returned no matches; package not installed locally"
+    },
+    {
+      "name": "esp32dev",
+      "version": "built-in",
+      "source": "PlatformIO espressif32 platform (fallback)",
+      "present": true,
+      "required": true,
+      "test_result": "pio pkg install accepted board=esp32dev; all CYD2USB v3 pins and parameters pinned in platformio.ini, pins.h, and hal_config.h"
+    }
+  ],
+  "python_packages": [
+    {
+      "name": "platformio",
+      "version": "6.1.19",
+      "source": "pip in workspace .venv",
+      "present": true,
+      "required": true,
+      "test_result": "pip show platformio returned Name: platformio Version: 6.1.19"
+    },
+    {
+      "name": "esptool",
+      "version": "5.3.0",
+      "source": "pip in workspace .venv",
+      "present": true,
+      "required": true,
+      "test_result": ".venv/Scripts/python.exe -m esptool version returned esptool v5.3.0"
+    },
+    {
+      "name": "pyserial",
+      "version": "3.5",
+      "source": "pip in workspace .venv",
+      "present": true,
+      "required": true,
+      "test_result": "pip show pyserial returned Name: pyserial Version: 3.5"
+    }
+  ],
+  "binaries": [
+    {
+      "name": "pio",
+      "version": "PlatformIO Core 6.1.19",
+      "source": "C:\\Users\\terav\\.platformio\\penv\\Scripts\\pio.exe",
+      "present": true,
+      "required": true,
+      "test_result": "pio --version returned PlatformIO Core, version 6.1.19"
+    },
+    {
+      "name": "wokwi-cli",
+      "version": "0.26.1",
+      "source": "C:\\Users\\terav\\.wokwi\\bin\\wokwi-cli.exe",
+      "present": true,
+      "required": true,
+      "test_result": "wokwi-cli --version returned 0.26.1; wokwi-cli lint on diagram.json succeeded with only expected info-level unsupported-part warning"
+    },
+    {
+      "name": "esptool.py",
+      "version": "5.3.0",
+      "source": "workspace .venv module",
+      "present": true,
+      "required": true,
+      "test_result": ".venv/Scripts/python.exe -m esptool version returned esptool v5.3.0"
+    }
+  ],
+  "libraries": [
+    {
+      "name": "lvgl",
+      "version": "8.4.0",
+      "source": "PlatformIO registry (lvgl/lvgl)",
+      "present": true,
+      "required": true,
+      "test_result": "pio pkg install --library lvgl/lvgl@8.4.0 succeeded; library.json reports version 8.4.0 in .pio/libdeps/esp32-2432s028r_cyd2usb/lvgl"
+    },
+    {
+      "name": "TFT_eSPI",
+      "version": "2.5.43",
+      "source": "PlatformIO registry (bodmer/TFT_eSPI)",
+      "present": true,
+      "required": true,
+      "test_result": "pio pkg install succeeded; library.json reports version 2.5.43 in .pio/libdeps/esp32-2432s028r_cyd2usb/TFT_eSPI"
+    },
+    {
+      "name": "XPT2046_Touchscreen",
+      "version": "0.0.0-alpha+sha.26b691b2c8",
+      "source": "PlatformIO registry (paulstoffregen/XPT2046_Touchscreen)",
+      "present": true,
+      "required": true,
+      "test_result": "pio pkg install succeeded; library.json reports version 0.0.0-alpha+sha.26b691b2c8 in .pio/libdeps/esp32-2432s028r_cyd2usb/XPT2046_Touchscreen"
+    },
+    {
+      "name": "NimBLE-Arduino",
+      "version": "1.4.3",
+      "source": "PlatformIO registry (h2zero/NimBLE-Arduino)",
+      "present": true,
+      "required": true,
+      "test_result": "pio pkg install succeeded; library.properties reports version=1.4.3 in .pio/libdeps/esp32-2432s028r_cyd2usb/NimBLE-Arduino"
+    }
+  ],
+  "hardware": [
+    {
+      "name": "CYD2USB v3 (ESP32-2432S028R) physical board",
+      "version": "n/a",
+      "source": "Physical device connected via USB",
+      "present": false,
+      "required": false,
+      "test_result": "pio device list shows only Bluetooth serial COM ports (COM3, COM4); no USB-serial ESP32/CYD2USB device detected"
+    },
+    {
+      "name": "ST7789 display controller",
+      "version": "n/a",
+      "source": "Onboard CYD2USB v3",
+      "present": false,
+      "required": false,
+      "test_result": "No physical board detected; Wokwi uses wokwi-ili9341 as functional framebuffer substitute"
+    },
+    {
+      "name": "XPT2046 resistive touchscreen controller",
+      "version": "n/a",
+      "source": "Onboard CYD2USB v3",
+      "present": false,
+      "required": false,
+      "test_result": "No physical board detected; wokwi-xpt2046 omitted from diagram.json per LL-032 (not supported by Wokwi CLI)"
+    },
+    {
+      "name": "ESP32 integrated BLE radio",
+      "version": "n/a",
+      "source": "On-chip ESP32",
+      "present": false,
+      "required": false,
+      "test_result": "No physical board detected; BLE validated on physical hardware or via host-level unit tests per definition.md Wokwi Delta"
+    }
+  ],
+  "simulators": [
+    {
+      "name": "Wokwi CLI",
+      "version": "0.26.1",
+      "source": "https://wokwi.com/ci",
+      "present": true,
+      "required": true,
+      "test_result": "wokwi-cli --version succeeded; wokwi-cli lint on wokwi/diagram.json succeeded (1 expected info-level unsupported-part warning for wokwi-esp32-devkit-v1)"
+    },
+    {
+      "name": "Wokwi CLI authentication token",
+      "version": "n/a",
+      "source": "projects/CYD_RPS/.env (WOKWI_CLI_TOKEN)",
+      "present": true,
+      "required": true,
+      "test_result": "WOKWI_CLI_TOKEN is present in projects/CYD_RPS/.env; token was exported for lint and is available for CI runs"
+    }
+  ],
+  "external_programs": [
+    {
+      "name": "Python",
+      "version": "3.14.2",
+      "source": "workspace .venv (c:\\Users\\terav\\WORKSPACE_MAOA_CYDVibeCoder -Kimi\\.venv)",
+      "present": true,
+      "required": true,
+      "test_result": ".venv/Scripts/python.exe --version returned Python 3.14.2"
+    },
+    {
+      "name": "Git",
+      "version": "2.54.0.windows.1",
+      "source": "system PATH",
+      "present": true,
+      "required": true,
+      "test_result": "git --version returned git version 2.54.0.windows.1"
+    }
+  ],
+  "fallbacks_applied": [
+    "Preferred board package 'esp32-2432s028r_cyd2usb' is not installed locally. The project uses board=esp32dev with all CYD2USB v3 pins and build parameters pinned in platformio.ini, include/pins.h, and include/hal_config.h.",
+    "Physical CYD2USB hardware not detected. Wokwi is the required target environment and wokwi/diagram.json has been produced (wokwi-xpt2046 omitted per LL-032)."
+  ],
+  "orchestrator_notifications": [
+    "Preferred board package 'esp32-2432s028r_cyd2usb' is not present in the local PlatformIO installation. The functionally equivalent 'esp32dev' fallback is active with CYD2USB v3 parameters pinned. No user action is required unless the project specifically needs the named board package.",
+    "Physical CYD2USB hardware was not detected on the host USB ports. Wokwi simulation is the primary target for this workflow stage; hardware validation will be performed later when a board is connected."
+  ]
+}
