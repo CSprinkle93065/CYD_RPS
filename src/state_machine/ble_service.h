@@ -57,6 +57,13 @@ public:
     // role resolution without blocking the radio task indefinitely.
     static constexpr uint32_t kConnectRetryDelayMs = 250;
 
+    // NimBLEClient::connect() default timeout is 30 s. When the controller
+    // rejects the attempt with status=13 (BLE_ERR_CONN_REJ_RESOURCES), waiting
+    // 30 s per retry makes the bounded retry window unusable. Reducing the
+    // timeout to 5 s lets the JOIN retry quickly and keeps total negotiation
+    // time under ~20 s. See docs/BugReport_CYD_RPS_v0.1.6.md §8.6.
+    static constexpr uint8_t kConnectTimeoutSeconds = 5;
+
     // Test/development company ID placed at the start of the BLE advertisement
     // manufacturer-specific data. The full payload is company ID + 6-byte
     // public MAC. See docs/BugReport_CYD_RPS_v0.1.5.md §6.3 and §8.3.

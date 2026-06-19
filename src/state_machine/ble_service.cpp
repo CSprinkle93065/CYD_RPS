@@ -425,12 +425,25 @@ void BleService::connect_to_host() {
     }
     cli->setClientCallbacks(new RpsClientCallbacks());
 
+    // The JOIN must stop advertising before acting as a central. The ESP32
+    // NimBLE controller rejects the connect attempt with status=13
+    // (BLE_ERR_CONN_REJ_RESOURCES) when the JOIN remains a peripheral
+    // advertiser while initiating a connection. See
+    // docs/BugReport_CYD_RPS_v0.1.6.md §8.5.
+    stop_advertising();
+
     uint8_t addr_buf[6];
     memcpy(addr_buf, peer_addr_, 6);
     // Use the address type captured during discovery; reconstructing with
     // BLE_ADDR_PUBLIC causes status=13 when the peer advertised a random or
     // resolvable address. See docs/BugReport_CYD_RPS_v0.1.4.md §6.2 and §8.3.
     NimBLEAddress addr(addr_buf, peer_addr_type_);
+
+    // Reduce the per-attempt connect timeout from the 30 s default so a
+    // resource-conflict failure surfaces quickly instead of blocking the radio
+    // task for the full default timeout. See
+    // docs/BugReport_CYD_RPS_v0.1.6.md §8.6.
+    cli->setConnectTimeout(kConnectTimeoutSeconds);
 
     // The HOST may not yet have finished role resolution when the JOIN first
     // tries to connect. Retry a bounded number of times with a short backoff
@@ -450,6 +463,10 @@ void BleService::connect_to_host() {
 
     if (!connected) {
         Serial.println("ERROR: BLE join connection failed after retries");
+        // Restart advertising so this unit remains discoverable if the state
+        // machine re-enters a discovery/negotiation cycle. See
+        // docs/BugReport_CYD_RPS_v0.1.6.md §8.6.
+        start_advertising();
         NimBLEDevice::deleteClient(cli);
         client_ = nullptr;
         sm_post_event(Event::EV_ERROR);

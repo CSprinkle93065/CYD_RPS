@@ -1,10 +1,13 @@
 # Assessment: Stage 14 — Integration Code Critic
 
 **Project:** CYD_RPS  
-**Version:** 0.1.6 (bug-fix revision)  
-**Workflow ID:** wvc_20260619_034654  
+**Version:** 0.1.7 (bug-fix revision)  
+**Workflow ID:** wvc_20260619_134606  
 **Reviewer:** Integration Code Critic  
+**Review Date:** 2026-06-19  
 **Verdict:** GO
+
+---
 
 ## Quality-Gate Results
 
@@ -18,9 +21,11 @@
 
 ## Summary
 
-The CYD_RPS v0.1.6 bug-fix revision addresses the remaining BLE multiplayer connection failures described in `docs/BugReport_CYD_RPS_v0.1.5.md` (JOIN-side connection retries, stable symmetric role resolution via manufacturer data, and the JOIN keeping advertising active during role negotiation). The fix is confined to Firmware Logic: `src/state_machine/ble_service.cpp` and `src/state_machine/ble_service.h`.
+The CYD_RPS v0.1.7 bug-fix revision addresses the BLE multiplayer JOIN connection failure (`status=13` / `BLE_ERR_CONN_REJ_RESOURCES`) documented in `docs/BugReport_CYD_RPS_v0.1.6.md` §8. The fix is confined to Firmware Logic: `src/state_machine/ble_service.cpp` and `src/state_machine/ble_service.h`. Stage 13 confirmed that no integration wiring changes were required.
 
-The integration layer (`src/integration/integration.cpp`, `src/integration/integration.h`) and the system entry point (`src/main.cpp`) remain pure glue. They forward LVGL input events to the state-machine event queue and run the state-machine/BLE update hook after `lv_timer_handler()` so NimBLE radio work stays off the LVGL timer context. No ownership boundaries were violated, all contract bindings remain wired, no business logic leaked into integration code, and both PlatformIO environments build successfully.
+The integration layer (`src/integration/integration.cpp`, `src/integration/integration.h`) and the application entry point (`src/main.cpp`) remain unchanged glue code. They forward LVGL input events to the state-machine event queue and run the state-machine/BLE update hook after `lv_timer_handler()` returns, keeping NimBLE radio work outside the LVGL timer context. No agent-ownership boundaries were violated, all contract bindings remain wired, no business logic leaked into integration code, and both PlatformIO environments build successfully.
+
+---
 
 ## Detailed Findings
 
@@ -34,8 +39,8 @@ Integration-owned files:
 
 Display & Input owned files (`src/ui/*`) and Firmware Logic owned files (`src/state_machine/*`) show no integration-specific edits for this revision:
 
-- No `#include "integration/integration.h"` appears in `src/ui/` or `src/state_machine/`.
-- File timestamps place the v0.1.6 changes in `src/state_machine/ble_service.cpp` and `src/state_machine/ble_service.h`; `src/main.cpp` and `src/integration/*` were not modified for the v0.1.6 BLE fix.
+- The Stage 12 Firmware Logic Code Critic review confirms the v0.1.7 change is isolated to `src/state_machine/ble_service.cpp` and `src/state_machine/ble_service.h`.
+- `#include "integration/integration.h"` appears only in `src/main.cpp` and `src/integration/integration.cpp`; no UI or state-machine file depends on the integration module.
 - The UI layer still exposes the single registration point `ui_register_event_post_callback()` and overrides the weak UI adapter callbacks only in `src/ui/ui.cpp`.
 - The state-machine layer still exposes `app::sm_post_event()` and `app::sm_instance().update()`; it does not depend on the integration module.
 
@@ -74,7 +79,7 @@ void integration_init(void)
 }
 ```
 
-The dynamic `lblTimeout` countdown is driven by Firmware Logic (`AppStateMachine::update_search_timeout_display()` calling `ui_set_search_timeout()`). The integration layer does not poll or compute dynamic values.
+The dynamic `lblTimeout` countdown is driven by Firmware Logic (`AppStateMachine::update_search_timeout_display()` calling `ui_set_search_timeout()`). The integration layer does not poll or compute dynamic values (LL-041).
 
 **Result:** PASS
 
@@ -86,7 +91,7 @@ The dynamic `lblTimeout` countdown is driven by Firmware Logic (`AppStateMachine
   - `integration_update()` calling `app::sm_instance().update()`.
 - No game rules, move evaluation, BLE role negotiation, scoring, timeout computation, address-type handling, connection retry logic, manufacturer-data encoding, or state-transition decisions are present.
 - `src/main.cpp` is system initialization and `loop()` ordering only. The `#ifdef WOKWI_SIMULATION` NimBLE skip is an environment-specific hardware-probe decision, not application business logic.
-- The v0.1.6 BLE fixes live entirely in `src/state_machine/ble_service.cpp`/`ble_service.h`.
+- The v0.1.7 BLE fixes live entirely in `src/state_machine/ble_service.cpp`/`ble_service.h`.
 
 **Result:** PASS
 
@@ -94,16 +99,16 @@ The dynamic `lblTimeout` countdown is driven by Firmware Logic (`AppStateMachine
 
 - LVGL runs in the Arduino `loop()` task. `lv_timer_handler()` is called first; its input-device read callbacks and button-click event handlers execute in that task context.
 - The button-click handlers (`src/ui/ui.cpp:48-95`) call `post_event()`, which invokes the integration-registered callback and ultimately `app::sm_post_event()`.
-- `app::sm_post_event()` (`src/state_machine/app_state_machine.cpp:82-84`) enqueues events under a FreeRTOS mutex created in the `AppStateMachine` constructor.
-- `integration_update()` runs after `lv_timer_handler()` in the same `loop()` task. It calls `AppStateMachine::update()`, which:
+- `app::sm_post_event()` (`src/state_machine/app_state_machine.cpp:82-84`) enqueues events under a FreeRTOS mutex created in the `AppStateMachine` constructor (`src/state_machine/app_state_machine.cpp:79`).
+- `integration_update()` runs after `lv_timer_handler()` in the same `loop()` task. It calls `AppStateMachine::update()` (`src/state_machine/app_state_machine.cpp:99-124`), which:
   1. drives non-blocking BLE work (`ble_service().update()`),
   2. starts deferred discovery if `ctx_.start_discovery_pending` is set,
   3. updates the search-timeout label,
-  4. dispatches queued events under the same mutex.
-- A dedicated FreeRTOS BLE radio task is created on physical hardware (`src/state_machine/ble_service.cpp:152-176`) and pinned to core 0. It consumes commands from a `QueueHandle_t` and performs NimBLE scan, advertise, role-resolution, and connection work on its own stack, keeping NimBLE off the LVGL/main-loop stack.
-- NimBLE callbacks (BLE host task) only capture state and post events via `sm_post_event()`, which takes the mutex. They do not mutate `GameContext` or call LVGL directly.
+  4. dispatches queued events under the same mutex (`src/state_machine/app_state_machine.cpp:126-138`).
+- A dedicated FreeRTOS BLE radio task is created on physical hardware (`src/state_machine/ble_service.cpp:152-176`) and pinned to core 0. It consumes commands from a `QueueHandle_t` and performs NimBLE scan, advertise, role-resolution, and connection work on its own stack, keeping NimBLE off the LVGL/main-loop stack (LL-039, LL-042).
+- NimBLE callbacks (BLE host task) only capture state and post events via `sm_post_event()`, which takes the mutex. They do not mutate `GameContext` or call LVGL directly (LL-040).
 - State-machine actions run only on the `loop()` task while dispatching, so LVGL adapter calls (`ui_show_screen_*`, `ui_set_status`, etc.) are made from the LVGL-owning task.
-- Hardware is initialized exactly once in `src/main.cpp:53-119`; state-machine init actions are probes only (`src/state_machine/app_state_machine.cpp:44-61`).
+- Hardware is initialized exactly once in `src/main.cpp:53-119`; state-machine init actions are probes only (`src/state_machine/app_state_machine.cpp:44-61`) (LL-034).
 
 **Result:** PASS
 
@@ -113,8 +118,8 @@ The dynamic `lblTimeout` countdown is driven by Firmware Logic (`AppStateMachine
 - Build commands executed:
 
 ```bash
-python -m platformio run -e esp32-2432s028r_cyd2usb
-python -m platformio run -e esp32-2432s028r_cyd2usb_wokwi
+pio run -e esp32-2432s028r_cyd2usb
+pio run -e esp32-2432s028r_cyd2usb_wokwi
 ```
 
 - Results:
@@ -123,18 +128,20 @@ python -m platformio run -e esp32-2432s028r_cyd2usb_wokwi
 
 **Result:** PASS
 
+---
+
 ## Additional Checks
 
 ### `loop()` Ordering
 
-`src/main.cpp:122-133` calls `lv_timer_handler()` **before** `integration_update()`:
+`src/main.cpp:122-135` calls `lv_timer_handler()` **before** `integration_update()`:
 
 ```cpp
 lv_timer_handler();
 integration_update();
 ```
 
-This satisfies the requirement that deferred BLE discovery runs after the UI event has been dispatched, keeping NimBLE radio work out of the LVGL timer context.
+This satisfies the requirement that deferred BLE discovery runs after the UI event has been dispatched, keeping NimBLE radio work out of the LVGL timer context (LL-039).
 
 ### BLE Initialization Order
 
@@ -156,19 +163,16 @@ hal.mark_initialized(!hal.ble_init_failed() && !hal.hw_init_failed());
 
 On physical hardware:
 
-1. `ble_service().init()` initializes NimBLE, creates the GATT server and move characteristic, starts the service, and starts the GATT server while no GAP procedure is active. This preserves the v0.1.4 `BLE_HS_EBUSY`/`abort()` fix.
+1. `ble_service().init()` initializes NimBLE, creates the GATT server and move characteristic, starts the service, and starts the GATT server while no GAP procedure is active. This preserves the v0.1.4 `BLE_HS_EBUSY`/`abort()` fix (LL-044).
 2. `ble_service().start_radio_task()` then creates the dedicated radio task, after the GATT server is already started.
 
-### v0.1.6 BLE Fix Isolation
+### v0.1.7 BLE Fix Isolation
 
-The v0.1.6 change is confined to Firmware Logic:
+The v0.1.7 change is confined to Firmware Logic:
 
-- `BleService` stores `peer_public_addr_` alongside `peer_addr_`/`peer_addr_type_` (`src/state_machine/ble_service.h:191-207`).
-- `RpsAdvertisedDeviceCallbacks::onResult()` extracts the public MAC from manufacturer-specific data and passes it to `BleService::on_peer_found()` (`src/state_machine/ble_service.cpp:54-80`).
-- `do_start_discovery()` resets `peer_public_addr_valid_ = false` at discovery-cycle boundaries (`src/state_machine/ble_service.cpp:230`).
-- `resolve_role()` uses the stable public MAC for symmetric role resolution (`src/state_machine/ble_service.cpp:350-378`).
-- `become_join()` no longer stops advertising, so the peer HOST can still discover this unit and resolve its own role (`src/state_machine/ble_service.cpp:399-412`).
-- `connect_to_host()` retries a bounded number of times with a short backoff instead of failing on the first attempt (`src/state_machine/ble_service.cpp:414-457`).
+- `BleService::connect_to_host()` stops advertising before initiating the connection (`src/state_machine/ble_service.cpp:433`), with an in-file comment citing `docs/BugReport_CYD_RPS_v0.1.6.md` §8.5.
+- `BleService::kConnectTimeoutSeconds` is set to 5 s and applied via `cli->setConnectTimeout(kConnectTimeoutSeconds)` (`src/state_machine/ble_service.cpp:446`), reducing the per-attempt timeout from the NimBLE 30 s default.
+- On retry exhaustion, `connect_to_host()` restarts advertising and posts `EV_ERROR` (`src/state_machine/ble_service.cpp:464-473`).
 
 No integration or UI files were changed for this fix.
 
@@ -180,12 +184,14 @@ No integration or UI files were changed for this fix.
 default_envs = esp32-2432s028r_cyd2usb
 ```
 
-The default environment targets physical CYD2USB hardware. The Wokwi environment (`esp32-2432s028r_cyd2usb_wokwi`) remains available as an explicit non-default target.
+The default environment targets physical CYD2USB hardware. The Wokwi environment (`esp32-2432s028r_cyd2usb_wokwi`) remains available as an explicit non-default target (LL-038).
 
 ### Host State-Machine Tests
 
 `tests/host/test_state_machine.py` was executed and all 40 `host_assert` tests pass, confirming the generated dispatch table still matches the documented transitions.
 
+---
+
 ## Conclusion
 
-All Stage 14 quality gates pass for CYD_RPS v0.1.6. The integration wiring respects ownership boundaries, implements the full UI-to-state-machine contract, introduces no business logic, and preserves task safety with the dedicated BLE radio task. The v0.1.6 BLE multiplayer fixes are confined to Firmware Logic and do not affect the integration layer. `src/main.cpp` exists and the firmware builds successfully for both the physical-hardware and Wokwi environments.
+All Stage 14 quality gates pass for CYD_RPS v0.1.7. The integration wiring respects ownership boundaries, implements the full UI-to-state-machine contract, introduces no business logic, and preserves task safety with the dedicated BLE radio task. The v0.1.7 BLE multiplayer fixes are confined to Firmware Logic and do not affect the integration layer. `src/main.cpp` exists and the firmware builds successfully for both the physical-hardware and Wokwi environments.

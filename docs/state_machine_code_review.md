@@ -1,8 +1,8 @@
 # CYD_RPS Stage 12 — Firmware Logic Code Review
 
-**Workflow ID:** wvc_20260619_034654  
+**Workflow ID:** wvc_20260619_134606  
 **Project:** CYD_RPS  
-**Version:** 0.1.6  
+**Version:** 0.1.7  
 **Revision Type:** bug_fix  
 **Reviewer:** Firmware Logic Code Critic (Stage 12)  
 **Review Date:** 2026-06-19  
@@ -11,11 +11,11 @@
 
 ## Verdict: GO
 
-All MAOA Stage 12 quality gates pass. The Stage 11 v0.1.6 changes correctly address the three root causes documented in `docs/BugReport_CYD_RPS_v0.1.5.md`:
+All MAOA Stage 12 quality gates pass. The Stage 11 v0.1.7 changes correctly address the BLE multiplayer JOIN connection failure (`status=13` / `BLE_ERR_CONN_REJ_RESOURCES`) documented in `docs/BugReport_CYD_RPS_v0.1.6.md` §8:
 
-1. JOIN keeps advertising during role negotiation.
-2. JOIN retries the HOST connection with a bounded backoff.
-3. Role resolution uses the stable public MAC carried in the advertisement payload.
+1. The JOIN now stops advertising immediately before initiating the connection.
+2. The per-attempt connect timeout is reduced from the 30 s NimBLE default to 5 s.
+3. On retry exhaustion the JOIN restarts advertising and posts `EV_ERROR`.
 
 The firmware compiles for both the physical hardware and Wokwi simulation environments.
 
@@ -27,6 +27,7 @@ The firmware compiles for both the physical hardware and Wokwi simulation enviro
 |---------|--------|-------|
 | `pio run -e esp32-2432s028r_cyd2usb` | **SUCCESS** | Firmware image built; RAM 23.2%, Flash 74.0%. |
 | `pio run -e esp32-2432s028r_cyd2usb_wokwi` | **SUCCESS** | Wokwi image built with `-D WOKWI_SIMULATION`; RAM 20.9%, Flash 67.4%. |
+| `pio check` | **SUCCESS — 0 high-severity issues** | No high-severity issues in project source. |
 | `pio test` | **N/A — no test directory** | Project has no `test/` folder; PlatformIO reports `TestDirNotExistsError`. This is expected per the task qualifier "if tests exist". |
 
 ---
@@ -36,7 +37,7 @@ The firmware compiles for both the physical hardware and Wokwi simulation enviro
 ### G12.1 — Every transition in `state_machine.puml` has a corresponding code path
 **PASS**
 
-`src/state_machine/state_machine_generated.cpp` implements every transition shown in `docs/state_machine.puml`. A transition-by-transition comparison confirms all 40 named transitions (Boot/Start/PeerSearch/RoleNegotiating/Connecting/Gameplay/SinglePlayerFallback/Evaluating/Result/Disconnected/Error/Halted) are present with the correct events, guards, and actions.
+`src/state_machine/state_machine_generated.cpp` implements every transition shown in `docs/state_machine.puml`. No states, events, guards, or actions were changed in this revision, so the prior transition-by-transition mapping remains intact.
 
 ### G12.2 — Guards reference `dependency_manifest.json` facts or runtime probes, not hardcoded assumptions
 **PASS**
@@ -61,7 +62,7 @@ The reviewed state-machine files (`ble_service.h`, `ble_service.cpp`, `state_mac
 - `BleService::init()` returns a Boolean; `main.cpp` converts a `false` result into `hal.mark_ble_init_failed(true)`, which `app_init()` maps to `EV_ERROR` and the PUML `Boot --> Error` transition.
 - `do_start_discovery()` posts `EV_ERROR` if `start_scanning()` fails.
 - `start_advertising_if_needed()` and `become_host()` post `EV_ERROR` if advertising cannot start.
-- `connect_to_host()` posts `EV_ERROR` only after all retries are exhausted, and also on client creation, service discovery, characteristic discovery, or subscription failure.
+- `connect_to_host()` posts `EV_ERROR` on invalid role/state, client creation failure, exhausted retries, service/characteristic discovery failure, and subscription failure.
 - `send_move()` returns `false` on failure; every caller (`on_local_move_*_complete/pending`) explicitly invokes `app_on_error("Failed to send move")` to post `EV_ERROR`.
 - `BleService::on_peer_found()` ignores invalid/self advertisements safely but does not swallow operational errors.
 
@@ -70,14 +71,14 @@ No external-call failure path silently drops the error.
 ### G12.5 — Generated code matches `state_machine.puml` transition-for-transition
 **PASS**
 
-`state_machine_generated.cpp` was compared line-by-line against `docs/state_machine.puml`. All states, events, guard predicates, and action calls match. The generated code uses the same state ordering and transition targets as the diagram.
+`state_machine_generated.cpp` was compared line-by-line against `docs/state_machine.puml`. All states, events, guard predicates, and action calls match. The generated code uses the same state ordering and transition targets as the diagram. The v0.1.7 fix did not modify the PUML or the generated dispatcher.
 
 ### G12.6 — No blocking delays in state-machine update loops
 **PASS**
 
 - `AppStateMachine::update()` only calls `ble_service().update(millis())`, `update_search_timeout_display()`, and `dispatch_pending()` — all non-blocking.
 - `BleService::update()` only calls `post_peer_timeout_if_needed()`, which is a simple timestamp comparison.
-- The 250 ms backoff in `connect_to_host()` lives inside the dedicated `ble_radio` task loop (`radio_task_loop()`), not the state-machine update path. It uses `vTaskDelay`, which yields the radio task.
+- The 250 ms retry backoff and the 5 s `NimBLEClient::connect()` timeout live inside the dedicated `ble_radio` task loop (`radio_task_loop()`), not the state-machine update path. The backoff uses `vTaskDelay`, which yields the radio task.
 - The `delay(5)` in `main.cpp` `loop()` is outside the state-machine update function.
 
 ### G12.7 — All GPIO access goes through the HAL/pins.h layer; ISR and watchdog safe
@@ -87,81 +88,79 @@ No state-machine source file performs direct GPIO register access. `main.cpp` ow
 
 ---
 
-## Stage 11 / v0.1.6 Specific Findings
+## Stage 11 / v0.1.7 Specific Findings
 
-### 1. Role resolution correctness
+### 1. Radio-task ownership
 **PASS**
 
-`BleService::resolve_role()` (lines 350–378 of `ble_service.cpp`) uses `peer_public_addr_` when `peer_public_addr_valid_` is true, otherwise falls back to `peer_addr_`. The comparison uses `memcmp(local, peer_id, 6)`. A `cmp == 0` guard returns safely. Lower MAC becomes HOST, higher MAC becomes JOIN, exactly as the bug report §8.3 prescribes.
+`BleService::connect_to_host()` is only invoked from the dedicated radio task, inside the `RadioCommand::CONNECT_TO_HOST` handler of `radio_task_loop()` (`ble_service.cpp` lines 592–596). The state-machine action `start_scanning_join()` posts the command via `signal_connect_to_host()` (`app_state_machine.cpp` lines 292–299), which uses `xQueueSend` to transfer work to the radio task. No NimBLE advertise/connect work is initiated from a state-machine action on the main/LVGL stack.
 
-The self-discovery guard in `on_peer_found()` (lines 322–339) prefers the public MAC and falls back to the random advertisement address, preventing a unit from resolving against itself.
-
-### 2. JOIN keeps advertising
+### 2. Address-type preservation
 **PASS**
 
-`BleService::become_join()` (lines 399–412) calls `stop_scanning()` and deliberately does **not** call `stop_advertising()`. The in-file comment explicitly cites `docs/BugReport_CYD_RPS_v0.1.5.md` §6.1 and §8.1.
+`RpsAdvertisedDeviceCallbacks::onResult()` passes `advertisedDevice->getAddress().getType()` to `on_peer_found()` (`ble_service.cpp` lines 78). The type is stored in `peer_addr_type_` (line 342) and reset at the start of each discovery cycle (line 229). `connect_to_host()` constructs `NimBLEAddress(addr_buf, peer_addr_type_)` (line 440), preserving the discovered type through the connection. This is the v0.1.4 fix (LL-045) and has not regressed.
 
-### 3. HOST advertising stability
+### 3. JOIN advertising timing
 **PASS**
 
-`BleService::become_host()` (lines 380–397) calls `start_advertising()`, which checks `adv->isAdvertising()` and returns `true` immediately without restarting. This avoids regenerating the random address that the JOIN captured. Comment cites `docs/BugReport_CYD_RPS_v0.1.5.md` §6.4 and §8.4.
+`connect_to_host()` calls `stop_advertising()` at line 433 before it calls `cli->connect(addr)` at line 457. The in-file comment at lines 428–432 explicitly cites `docs/BugReport_CYD_RPS_v0.1.6.md` §8.5 and explains that continuing to advertise while initiating a connection causes the ESP32 NimBLE controller to reject the attempt with `status=13` (`BLE_ERR_CONN_REJ_RESOURCES`).
 
-### 4. Connection retry safety
+`become_join()` still keeps advertising during role negotiation (lines 399–412), satisfying LL-046; the advertising is only stopped at the moment the JOIN transitions from "negotiation" to "connecting" inside the radio task.
+
+### 4. Connect timeout
 **PASS**
 
-`BleService::connect_to_host()` (lines 414–487) loops up to `kConnectRetries` (4) with `kConnectRetryDelayMs` (250 ms) between attempts. The loop runs inside the `CONNECT_TO_HOST` command handler of `radio_task_loop()`. `EV_ERROR` is posted only after the loop exhausts all attempts. Comment cites `docs/BugReport_CYD_RPS_v0.1.5.md` §6.2 and §8.2.
+`BleService::kConnectTimeoutSeconds` is declared in `ble_service.h` at line 65 with a rationale comment referencing `docs/BugReport_CYD_RPS_v0.1.6.md` §8.6. In `connect_to_host()`, `cli->setConnectTimeout(kConnectTimeoutSeconds)` is called at line 446, before the `for` loop that performs the retries (lines 453–462). This reduces the per-attempt timeout from the NimBLE default of 30 s to 5 s, matching the bug-report recommendation.
 
-### 5. Address-type preservation
+### 5. Failure cleanup
 **PASS**
 
-`RpsAdvertisedDeviceCallbacks::onResult()` passes `advertisedDevice->getAddress().getType()` to `on_peer_found()`. `connect_to_host()` constructs `NimBLEAddress(addr_buf, peer_addr_type_)`, preserving the discovered type through the connection. This is the v0.1.5 fix and has not regressed.
+When all retries are exhausted, `connect_to_host()` (lines 464–473):
 
-### 6. Radio-task ownership
-**MOSTLY PASS — one minor deviation noted**
+1. Logs the failure.
+2. Calls `start_advertising()` to make the JOIN discoverable again (line 469).
+3. Deletes the client and clears `client_` (lines 470–471).
+4. Posts `Event::EV_ERROR` (line 472).
 
-All *new* Stage 11 radio work (`BECOME_HOST`, `CONNECT_TO_HOST`) is posted to the dedicated `ble_radio` task. `START_DISCOVERY` and `STOP_DISCOVERY` are also routed through the task queue.
+This satisfies the bug-report §8.6 recommendation to restart advertising on connection failure before reporting the error.
 
-Two pre-existing NimBLE call sites are still invoked directly from state-machine actions rather than being queued to the radio task:
+### 6. No regressions
+**PASS**
 
-- `BleService::disconnect()` — called from `on_peer_disconnected()` and `reset_and_return_start()`.
-- `BleService::send_move()` — called from the local-move actions.
+The v0.1.2–v0.1.6 fixes are still present:
 
-Both calls are quick/non-blocking and return errors (or are handled by callers), so they do not violate G12.4 or G12.6. However, they are not fully aligned with the stricter LL-042 guideline that every NimBLE call triggered by a state-machine action should be posted to the radio task or documented as a safe probe. This is a low-severity carry-over defect, not introduced by Stage 11.
+| Fix | Location | Status |
+|-----|----------|--------|
+| GATT server started during init (v0.1.2/LL-044) | `ble_service.cpp` lines 117–146 | Present — `server_ptr(server_)->start()` is called before any GAP procedure. |
+| Non-blocking scan (v0.1.1/LL-036) | `ble_service.cpp` line 660 | Present — `scan_ptr(scan_)->start(0, nullptr, false)`. |
+| Wokwi fallback (v0.1.1/LL-037) | `ble_service.cpp` lines 237–243 | Present — forces discovery timeout immediately under `WOKWI_SIMULATION`. |
+| Thread-safe event queue (v0.1.2/LL-040) | `app_state_machine.cpp` lines 79–150 | Present — `queue_mutex_` protects `enqueue()` and `dispatch_pending()`. |
+| Public-MAC manufacturer data (v0.1.6/LL-047) | `ble_service.cpp` lines 679–688; `ble_service.h` lines 67–70, 209–214 | Present — local public MAC embedded in manufacturer data and parsed in `onResult()`. |
+| Bounded retry loop (v0.1.6/LL-046) | `ble_service.cpp` lines 452–462 | Present — up to `kConnectRetries` (4) attempts with `kConnectRetryDelayMs` (250 ms) backoff. |
 
 ### 7. In-file documentation (LL-043)
 **PASS**
 
-Every v0.1.6 bug-report-driven change has an adjacent comment citing `docs/BugReport_CYD_RPS_v0.1.5.md`:
+The v0.1.7 bug-report-driven change has an adjacent rationale comment:
 
 | Change | File | Comment location |
 |--------|------|------------------|
-| Public-MAC manufacturer payload | `ble_service.cpp` | `start_advertising()` lines 662–665 |
-| Peer public-MAC extraction | `ble_service.cpp` | `RpsAdvertisedDeviceCallbacks::onResult()` lines 64–67 |
-| Public-MAC constants / fields | `ble_service.h` | `kManufacturerCompanyId` lines 60–62; `peer_public_addr_` lines 202–206 |
-| Connection retry constants | `ble_service.h` | `kConnectRetries` lines 49–52; `kConnectRetryDelayMs` lines 55–58 |
-| Self-discovery guard | `ble_service.cpp` | `on_peer_found()` lines 322–325 |
-| Role resolution by public MAC | `ble_service.cpp` | `resolve_role()` lines 358–361 |
-| HOST no-restart advertising | `ble_service.cpp` | `become_host()` lines 385–388 |
-| JOIN keeps advertising | `ble_service.cpp` | `become_join()` lines 402–406 |
-| Bounded connection retries | `ble_service.cpp` | `connect_to_host()` lines 435–438 |
+| Connect timeout reduction | `ble_service.h` | `kConnectTimeoutSeconds` lines 60–65 |
+| Stop JOIN advertising before connect | `ble_service.cpp` | `connect_to_host()` lines 428–432 |
+| Restart advertising on connect failure | `ble_service.cpp` | `connect_to_host()` lines 466–468 |
 
-### 8. Compile and test
-**PASS**
-
-Both requested `pio run` environments build successfully. No PlatformIO unit tests exist in the project, so `pio test` is not applicable.
+All comments state what changed, why, and point to the relevant bug-report section, satisfying LL-043.
 
 ---
 
 ## Defects / Action Items
 
-| ID | Severity | Description | Recommendation |
-|----|----------|-------------|----------------|
-| D01 | Low | `BleService::disconnect()` and `BleService::send_move()` are called directly from state-machine actions and bypass the dedicated radio task. | Future revision: route these through the `RadioCommand` queue or document them as safe, non-blocking probes to fully satisfy LL-042. Not a Stage 11 regression and does not fail any G12 gate. |
+None. All Stage 12 quality gates pass and the v0.1.7 fix is ready for the next workflow stage.
 
 ---
 
 ## Summary
 
-The Stage 11 v0.1.6 revision correctly fixes the asymmetric two-player BLE connection failure described in `docs/BugReport_CYD_RPS_v0.1.5.md`. The code is well-documented, compiles for both target environments, and satisfies all Stage 12 quality gates. The single low-severity deviation (direct `disconnect()` / `send_move()` calls) is pre-existing and does not block the release.
+The Stage 11 v0.1.7 revision correctly fixes the BLE multiplayer JOIN connection failure described in `docs/BugReport_CYD_RPS_v0.1.6.md` §8. The code is well-documented, compiles for both target environments, passes `pio check` with zero high-severity issues, and satisfies all Stage 12 quality gates. No regressions were identified in the prior v0.1.2–v0.1.6 fixes.
 
 **Recommended action:** Proceed to the next workflow stage.
