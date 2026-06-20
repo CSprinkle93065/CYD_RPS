@@ -425,13 +425,6 @@ void BleService::connect_to_host() {
     }
     cli->setClientCallbacks(new RpsClientCallbacks());
 
-    // The JOIN must stop advertising before acting as a central. The ESP32
-    // NimBLE controller rejects the connect attempt with status=13
-    // (BLE_ERR_CONN_REJ_RESOURCES) when the JOIN remains a peripheral
-    // advertiser while initiating a connection. See
-    // docs/BugReport_CYD_RPS_v0.1.6.md §8.5.
-    stop_advertising();
-
     uint8_t addr_buf[6];
     memcpy(addr_buf, peer_addr_, 6);
     // Use the address type captured during discovery; reconstructing with
@@ -440,20 +433,42 @@ void BleService::connect_to_host() {
     NimBLEAddress addr(addr_buf, peer_addr_type_);
 
     // Reduce the per-attempt connect timeout from the 30 s default so a
-    // resource-conflict failure surfaces quickly instead of blocking the radio
-    // task for the full default timeout. See
-    // docs/BugReport_CYD_RPS_v0.1.6.md §8.6.
+    // connect failure surfaces quickly instead of blocking the radio task for
+    // the full default timeout. See docs/BugReport_CYD_RPS_v0.1.6.md §8.6 and
+    // docs/BugReport_CYD_RPS_v0.1.7.md §11.2.
     cli->setConnectTimeout(kConnectTimeoutSeconds);
 
     // The HOST may not yet have finished role resolution when the JOIN first
-    // tries to connect. Retry a bounded number of times with a short backoff
-    // instead of giving up on the first connect() failure. See
-    // docs/BugReport_CYD_RPS_v0.1.5.md §6.2 and §8.2.
+    // tries to connect. Keep advertising for a bounded discovery window before
+    // each connect() attempt so the HOST can discover the JOIN and stop scanning
+    // (an ESP32 that is scanning cannot reliably accept a connection). Stop
+    // advertising immediately before connect() because the controller rejects a
+    // central connect attempt while we are also a peripheral advertiser. See
+    // docs/BugReport_CYD_RPS_v0.1.6.md §8.5, docs/BugReport_CYD_RPS_v0.1.7.md
+    // §9.1 and §9.2.
     bool connected = false;
     for (int attempt = 0; attempt < kConnectRetries; ++attempt) {
-        if (attempt > 0) {
-            vTaskDelay(pdMS_TO_TICKS(kConnectRetryDelayMs));
+        if (attempt == 0) {
+            // Initial discovery window after role resolution: advertising is
+            // already running from become_join(); keep it running long enough
+            // for the peer to discover us and resolve to HOST.
+            Serial.println("BLE: initial discovery window before connect");
+            start_advertising();  // no-op if already active; ensures interval
+            vTaskDelay(pdMS_TO_TICKS(kJoinDiscoveryWindowMs));
+        } else {
+            // After a timeout failure the HOST may still be scanning. Restart
+            // advertising and give it another bounded discovery window before
+            // the next connect attempt.
+            Serial.printf("BLE: connect retry %d/%d - discovery window\n", attempt + 1, kConnectRetries);
+            start_advertising();
+            vTaskDelay(pdMS_TO_TICKS(kJoinConnectInterRetryWindowMs));
         }
+        // The JOIN must stop advertising before acting as a central. The ESP32
+        // NimBLE controller rejects the connect attempt when the JOIN remains a
+        // peripheral advertiser while initiating a connection. See
+        // docs/BugReport_CYD_RPS_v0.1.6.md §8.5.
+        stop_advertising();
+
         if (cli->connect(addr)) {
             connected = true;
             break;
@@ -688,6 +703,24 @@ bool BleService::start_advertising() {
         adv->setManufacturerData(manu);
     }
     NimBLEAdvertising* adv = adv_ptr(advertising_);
+
+    // Use a short advertising interval during peer search / negotiation so the
+    // peer is more likely to hear us within each scan window and within the
+    // bounded discovery window. Only apply the interval when advertising is not
+    // already active: stopping an active advertisement to change parameters
+    // regenerates the random address and invalidates the address the peer
+    // captured during discovery. See docs/BugReport_CYD_RPS_v0.1.7.md §9.3 and
+    // docs/BugReport_CYD_RPS_v0.1.5.md §6.4.
+    if (!adv->isAdvertising()) {
+        if (discovering_ && role_ != Role::HOST) {
+            adv->setMinInterval(kPeerSearchAdvMinInterval);
+            adv->setMaxInterval(kPeerSearchAdvMaxInterval);
+        } else {
+            adv->setMinInterval(kNormalAdvMinInterval);
+            adv->setMaxInterval(kNormalAdvMaxInterval);
+        }
+    }
+
     if (adv->isAdvertising()) {
         return true;
     }

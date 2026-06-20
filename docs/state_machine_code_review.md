@@ -1,166 +1,140 @@
-# CYD_RPS Stage 12 — Firmware Logic Code Review
+# CYD_RPS v0.1.8 — Firmware Logic Code Review (Stage 12)
 
-**Workflow ID:** wvc_20260619_134606  
-**Project:** CYD_RPS  
-**Version:** 0.1.7  
-**Revision Type:** bug_fix  
-**Reviewer:** Firmware Logic Code Critic (Stage 12)  
-**Review Date:** 2026-06-19  
-
----
-
-## Verdict: GO
-
-All MAOA Stage 12 quality gates pass. The Stage 11 v0.1.7 changes correctly address the BLE multiplayer JOIN connection failure (`status=13` / `BLE_ERR_CONN_REJ_RESOURCES`) documented in `docs/BugReport_CYD_RPS_v0.1.6.md` §8:
-
-1. The JOIN now stops advertising immediately before initiating the connection.
-2. The per-attempt connect timeout is reduced from the 30 s NimBLE default to 5 s.
-3. On retry exhaustion the JOIN restarts advertising and posts `EV_ERROR`.
-
-The firmware compiles for both the physical hardware and Wokwi simulation environments.
+| Field | Value |
+|-------|-------|
+| **Workflow ID** | wvc_20260619_072600 |
+| **Project** | CYD_RPS |
+| **Version** | 0.1.8 |
+| **Revision Type** | bug_fix |
+| **Reviewer** | Firmware Logic Code Critic (Stage 12) |
+| **Date** | 2026-06-20 |
 
 ---
 
-## Build / Test Evidence
+## Verdict: **GO**
 
-| Command | Result | Notes |
-|---------|--------|-------|
-| `pio run -e esp32-2432s028r_cyd2usb` | **SUCCESS** | Firmware image built; RAM 23.2%, Flash 74.0%. |
-| `pio run -e esp32-2432s028r_cyd2usb_wokwi` | **SUCCESS** | Wokwi image built with `-D WOKWI_SIMULATION`; RAM 20.9%, Flash 67.4%. |
-| `pio check` | **SUCCESS — 0 high-severity issues** | No high-severity issues in project source. |
-| `pio test` | **N/A — no test directory** | Project has no `test/` folder; PlatformIO reports `TestDirNotExistsError`. This is expected per the task qualifier "if tests exist". |
+The v0.1.8 BLE discovery-race fix compiles cleanly for both target environments and satisfies all Stage 12 quality gates. The JOIN now keeps advertising for a bounded discovery window before each `connect()` attempt, and the HOST has repeated opportunities to discover the JOIN and stop scanning before the connection is initiated.
 
 ---
 
-## Quality Gate Results
+## Build Verification
+
+| Environment | Command | Result |
+|-------------|---------|--------|
+| Physical CYD2USB | `pio run -e esp32-2432s028r_cyd2usb` | **SUCCESS** (Flash: 970,205 bytes / 1,310,720; RAM: 76,036 bytes / 327,680) |
+| Wokwi simulation | `pio run -e esp32-2432s028r_cyd2usb_wokwi` | **SUCCESS** (Flash: 883,321 bytes / 1,310,720; RAM: 68,648 bytes / 327,680) |
+
+Both builds completed without errors or warnings that would block the review.
+
+---
+
+## Quality Gate Findings
 
 ### G12.1 — Every transition in `state_machine.puml` has a corresponding code path
-**PASS**
 
-`src/state_machine/state_machine_generated.cpp` implements every transition shown in `docs/state_machine.puml`. No states, events, guards, or actions were changed in this revision, so the prior transition-by-transition mapping remains intact.
+**Status: PASS**
 
-### G12.2 — Guards reference `dependency_manifest.json` facts or runtime probes, not hardcoded assumptions
-**PASS**
+All transitions defined in `docs/state_machine.puml` are present in `src/state_machine/state_machine_generated.cpp`:
+
+- `Boot --> Start`, `Boot --> Error`, `Boot --> Halted`
+- `Start --> PeerSearch`, `Start --> Error`
+- `PeerSearch --> RoleNegotiating`, `PeerSearch --> SinglePlayerFallback`, `PeerSearch --> Start`, `PeerSearch --> Error`
+- `RoleNegotiating --> Connecting` (host and join guards), `RoleNegotiating --> Error`
+- `Connecting --> Gameplay`, `Connecting --> Disconnected`, `Connecting --> Error`
+- All `Gameplay` move transitions and `EV_PEER_MOVE_RECEIVED` transitions
+- `SinglePlayerFallback --> Evaluating`, `SinglePlayerFallback --> Error`
+- `Evaluating --> Result`, `Evaluating --> Error`
+- `Result --> Gameplay`, `Result --> SinglePlayerFallback`, `Result --> Disconnected`, `Result --> Error`
+- `Disconnected --> Start`, `Disconnected --> Error`
+- `Error --> Start`, `Error --> Halted`
+
+No PUML transition is missing or unreachable.
+
+### G12.2 — Guards reference dependency-manifest facts or runtime probes, not hardcoded assumptions
+
+**Status: PASS**
 
 All guards in `app_state_machine.cpp` read runtime state:
 
-- `guard_init_ok` / `guard_ble_init_failed` / `guard_hw_init_failed` / `guard_fatal` probe `hal_service()`.
-- `guard_game_mode_eq_*` read `ctx_.game_mode`.
-- `guard_local_move_chosen` / `guard_peer_move_received` families read `ctx_.local_move` / `ctx_.peer_move`.
-- `guard_role_host` / `guard_role_join` read `ble_service().role()`.
+- `guard_init_ok`, `guard_ble_init_failed`, `guard_hw_init_failed`, `guard_fatal` → `hal_service()` probes.
+- `guard_game_mode_eq_MODE_MULTI_PLAYER` / `MODE_SINGLE_PLAYER` → `ctx_.game_mode`.
+- `guard_local_move_chosen` / `guard_not_local_move_chosen` → `ctx_.local_move`.
+- `guard_peer_move_received` / `guard_not_peer_move_received` → `ctx_.peer_move`.
+- `guard_role_host` / `guard_role_join` → `ble_service().role()`.
 
-No guard contains hardcoded constants or assumptions about the runtime environment.
+No guard contains a hardcoded constant or assumption about the runtime environment.
 
 ### G12.3 — No LVGL or UI toolkit imports in state machine code
-**PASS**
 
-The reviewed state-machine files (`ble_service.h`, `ble_service.cpp`, `state_machine_generated.cpp`, `state_machine_generated.h`, `app_state_machine.cpp`, `app_state_machine.h`, `game_logic.h`, `hal_service.h`) contain no `#include <lvgl.h>`, LVGL types, or UI toolkit symbols. `app_state_machine.h` declares only weak UI adapter callbacks with primitive C types.
+**Status: PASS**
+
+- `app_state_machine.cpp` only declares weak UI adapter stubs (`ui_show_screen_*`, `ui_set_*`); it does **not** include `lvgl.h` or any LVGL types.
+- `ble_service.cpp` / `ble_service.h` include only `Arduino.h`, `NimBLEDevice.h`, FreeRTOS headers, and project headers.
+- `state_machine_generated.cpp` has no UI imports.
+- Grep confirms no `lvgl`/`LVGL` imports in `src/state_machine`; references are confined to comments.
 
 ### G12.4 — All external calls have defined error-state transitions; no silent exception swallowing
-**PASS**
 
-- `BleService::init()` returns a Boolean; `main.cpp` converts a `false` result into `hal.mark_ble_init_failed(true)`, which `app_init()` maps to `EV_ERROR` and the PUML `Boot --> Error` transition.
-- `do_start_discovery()` posts `EV_ERROR` if `start_scanning()` fails.
-- `start_advertising_if_needed()` and `become_host()` post `EV_ERROR` if advertising cannot start.
-- `connect_to_host()` posts `EV_ERROR` on invalid role/state, client creation failure, exhausted retries, service/characteristic discovery failure, and subscription failure.
-- `send_move()` returns `false` on failure; every caller (`on_local_move_*_complete/pending`) explicitly invokes `app_on_error("Failed to send move")` to post `EV_ERROR`.
-- `BleService::on_peer_found()` ignores invalid/self advertisements safely but does not swallow operational errors.
+**Status: PASS**
 
-No external-call failure path silently drops the error.
+No `try`/`catch` blocks are used in the state-machine code, and no `delay()` calls are present. Error paths route through `EV_ERROR` or `EV_DISCONNECTED` as defined in the PUML:
+
+- `do_start_discovery()` posts `EV_ERROR` when NimBLE is uninitialized or `start_scanning()` fails.
+- `start_advertising_if_needed()` posts `EV_ERROR` when advertising cannot start.
+- `become_host()` posts `EV_ERROR` when `start_advertising()` fails.
+- `become_join()` stops scanning but keeps advertising and posts `EV_ROLE_RESOLVED`; advertising failure is not applicable here because it was already started during discovery.
+- `connect_to_host()` posts `EV_ERROR` on client creation failure, every connect retry failure, service/characteristic discovery failure, and subscription failure.
+- `send_move()` returns a boolean; callers in `app_state_machine.cpp` check the return value and call `app_on_error()` on failure.
+
+No external call silently swallows a failure or stalls without a PUML-defined exit.
 
 ### G12.5 — Generated code matches `state_machine.puml` transition-for-transition
-**PASS**
 
-`state_machine_generated.cpp` was compared line-by-line against `docs/state_machine.puml`. All states, events, guard predicates, and action calls match. The generated code uses the same state ordering and transition targets as the diagram. The v0.1.7 fix did not modify the PUML or the generated dispatcher.
+**Status: PASS**
+
+`src/state_machine/state_machine_generated.cpp` was generated from `docs/state_machine.puml` and the dispatch table is a faithful, one-to-one mapping:
+
+| PUML Transition | Generated Handler |
+|-----------------|-------------------|
+| `Boot --> Start : EV_BOOT_DONE [init_ok] / app_init_success()` | `case State::Boot: if (event == EV_BOOT_DONE && guard_init_ok(ctx)) { app_init_success(); state_ = State::Start; }` |
+| `RoleNegotiating --> Connecting : EV_ROLE_RESOLVED [role_join] / start_scanning_join()` | `case State::RoleNegotiating: if (event == EV_ROLE_RESOLVED && guard_role_join(ctx)) { start_scanning_join(); state_ = State::Connecting; }` |
+| `Gameplay --> Evaluating : EV_MOVE_ROCK [peer_move_received] / on_local_move_rock_complete()` | `case State::Gameplay: if (event == EV_MOVE_ROCK && guard_peer_move_received(ctx)) { on_local_move_rock_complete(); state_ = State::Evaluating; }` |
+
+Every event/guard/action tuple from the PUML appears in the generated dispatcher with the correct target state. No spurious transitions were introduced.
 
 ### G12.6 — No blocking delays in state-machine update loops
-**PASS**
 
-- `AppStateMachine::update()` only calls `ble_service().update(millis())`, `update_search_timeout_display()`, and `dispatch_pending()` — all non-blocking.
-- `BleService::update()` only calls `post_peer_timeout_if_needed()`, which is a simple timestamp comparison.
-- The 250 ms retry backoff and the 5 s `NimBLEClient::connect()` timeout live inside the dedicated `ble_radio` task loop (`radio_task_loop()`), not the state-machine update path. The backoff uses `vTaskDelay`, which yields the radio task.
-- The `delay(5)` in `main.cpp` `loop()` is outside the state-machine update function.
+**Status: PASS**
 
-### G12.7 — All GPIO access goes through the HAL/pins.h layer; ISR and watchdog safe
-**PASS**
-
-No state-machine source file performs direct GPIO register access. `main.cpp` owns the one-time GPIO setup (backlight, SPI, touch) using `pins.h` constants. The state machine layer only probes `HalService` flags and delegates BLE operations to the radio task.
+- `AppStateMachine::update()` is purely non-blocking: it calls `ble_service().update(millis())`, dispatches deferred discovery, updates the UI label, and drains the event queue.
+- The only blocking waits are `vTaskDelay()` inside `BleService::connect_to_host()`, which runs on the dedicated radio task (core 0), not the Arduino main loop or LVGL dispatch context.
+- Grep confirms no `delay()` calls in `src/state_machine`.
 
 ---
 
-## Stage 11 / v0.1.7 Specific Findings
+## Additional BLE-Specific Checks
 
-### 1. Radio-task ownership
-**PASS**
-
-`BleService::connect_to_host()` is only invoked from the dedicated radio task, inside the `RadioCommand::CONNECT_TO_HOST` handler of `radio_task_loop()` (`ble_service.cpp` lines 592–596). The state-machine action `start_scanning_join()` posts the command via `signal_connect_to_host()` (`app_state_machine.cpp` lines 292–299), which uses `xQueueSend` to transfer work to the radio task. No NimBLE advertise/connect work is initiated from a state-machine action on the main/LVGL stack.
-
-### 2. Address-type preservation
-**PASS**
-
-`RpsAdvertisedDeviceCallbacks::onResult()` passes `advertisedDevice->getAddress().getType()` to `on_peer_found()` (`ble_service.cpp` lines 78). The type is stored in `peer_addr_type_` (line 342) and reset at the start of each discovery cycle (line 229). `connect_to_host()` constructs `NimBLEAddress(addr_buf, peer_addr_type_)` (line 440), preserving the discovered type through the connection. This is the v0.1.4 fix (LL-045) and has not regressed.
-
-### 3. JOIN advertising timing
-**PASS**
-
-`connect_to_host()` calls `stop_advertising()` at line 433 before it calls `cli->connect(addr)` at line 457. The in-file comment at lines 428–432 explicitly cites `docs/BugReport_CYD_RPS_v0.1.6.md` §8.5 and explains that continuing to advertise while initiating a connection causes the ESP32 NimBLE controller to reject the attempt with `status=13` (`BLE_ERR_CONN_REJ_RESOURCES`).
-
-`become_join()` still keeps advertising during role negotiation (lines 399–412), satisfying LL-046; the advertising is only stopped at the moment the JOIN transitions from "negotiation" to "connecting" inside the radio task.
-
-### 4. Connect timeout
-**PASS**
-
-`BleService::kConnectTimeoutSeconds` is declared in `ble_service.h` at line 65 with a rationale comment referencing `docs/BugReport_CYD_RPS_v0.1.6.md` §8.6. In `connect_to_host()`, `cli->setConnectTimeout(kConnectTimeoutSeconds)` is called at line 446, before the `for` loop that performs the retries (lines 453–462). This reduces the per-attempt timeout from the NimBLE default of 30 s to 5 s, matching the bug-report recommendation.
-
-### 5. Failure cleanup
-**PASS**
-
-When all retries are exhausted, `connect_to_host()` (lines 464–473):
-
-1. Logs the failure.
-2. Calls `start_advertising()` to make the JOIN discoverable again (line 469).
-3. Deletes the client and clears `client_` (lines 470–471).
-4. Posts `Event::EV_ERROR` (line 472).
-
-This satisfies the bug-report §8.6 recommendation to restart advertising on connection failure before reporting the error.
-
-### 6. No regressions
-**PASS**
-
-The v0.1.2–v0.1.6 fixes are still present:
-
-| Fix | Location | Status |
-|-----|----------|--------|
-| GATT server started during init (v0.1.2/LL-044) | `ble_service.cpp` lines 117–146 | Present — `server_ptr(server_)->start()` is called before any GAP procedure. |
-| Non-blocking scan (v0.1.1/LL-036) | `ble_service.cpp` line 660 | Present — `scan_ptr(scan_)->start(0, nullptr, false)`. |
-| Wokwi fallback (v0.1.1/LL-037) | `ble_service.cpp` lines 237–243 | Present — forces discovery timeout immediately under `WOKWI_SIMULATION`. |
-| Thread-safe event queue (v0.1.2/LL-040) | `app_state_machine.cpp` lines 79–150 | Present — `queue_mutex_` protects `enqueue()` and `dispatch_pending()`. |
-| Public-MAC manufacturer data (v0.1.6/LL-047) | `ble_service.cpp` lines 679–688; `ble_service.h` lines 67–70, 209–214 | Present — local public MAC embedded in manufacturer data and parsed in `onResult()`. |
-| Bounded retry loop (v0.1.6/LL-046) | `ble_service.cpp` lines 452–462 | Present — up to `kConnectRetries` (4) attempts with `kConnectRetryDelayMs` (250 ms) backoff. |
-
-### 7. In-file documentation (LL-043)
-**PASS**
-
-The v0.1.7 bug-report-driven change has an adjacent rationale comment:
-
-| Change | File | Comment location |
-|--------|------|------------------|
-| Connect timeout reduction | `ble_service.h` | `kConnectTimeoutSeconds` lines 60–65 |
-| Stop JOIN advertising before connect | `ble_service.cpp` | `connect_to_host()` lines 428–432 |
-| Restart advertising on connect failure | `ble_service.cpp` | `connect_to_host()` lines 466–468 |
-
-All comments state what changed, why, and point to the relevant bug-report section, satisfying LL-043.
+| Check | Finding | Status |
+|-------|---------|--------|
+| JOIN does not stop advertising until immediately before `connect()` | `connect_to_host()` keeps advertising during each discovery window and calls `stop_advertising()` only immediately before `cli->connect(addr)`. | PASS |
+| JOIN waits a bounded discovery window before first `connect()` and between retries | `kJoinDiscoveryWindowMs = 2000` is used before attempt 1; `kJoinConnectInterRetryWindowMs = 2000` is used before attempts 2–4. | PASS |
+| Connect timeout is sized for the retry strategy (5 s per attempt) | `kConnectTimeoutSeconds = 5` is passed to `cli->setConnectTimeout()`. With 4 retries and 2 s windows, total negotiation time stays bounded under ~30 s. | PASS |
+| Peer address type captured during scanning is used verbatim in `NimBLEClient::connect()` | `on_peer_found()` stores `peer_addr_type_`; `connect_to_host()` constructs `NimBLEAddress addr(addr_buf, peer_addr_type_)`. | PASS |
+| All NimBLE scan/advertise/connect operations are owned by the dedicated radio task | `signal_discovery_start()`, `signal_become_host()`, and `signal_connect_to_host()` enqueue commands consumed by `radio_task_loop()`. All NimBLE GAP/GATT work executes on that task stack. | PASS |
+| Bug-report-driven timing constants have adjacent rationale comments referencing `docs/BugReport_CYD_RPS_v0.1.7.md` | `kConnectTimeoutSeconds`, `kJoinDiscoveryWindowMs`, `kJoinConnectInterRetryWindowMs`, and `kPeerSearchAdvMinInterval`/`kPeerSearchAdvMaxInterval` all cite the bug report in their header comments. Inline comments in `connect_to_host()` also cite §9.1, §9.2, and §11.2. | PASS |
 
 ---
 
-## Defects / Action Items
+## Observations (Non-Blocking)
 
-None. All Stage 12 quality gates pass and the v0.1.7 fix is ready for the next workflow stage.
+1. **Action naming:** `AppStateMachine::start_scanning_join()` is named after the PUML action but, for the JOIN role, it actually initiates the central connection via `signal_connect_to_host()`. The behavior is correct; the name reflects the contract document.
+2. **`signal_become_host()` naming:** The method name suggests HOST-only resolution, but it calls `resolve_role()`, which may resolve either HOST or JOIN. The implementation is correct and consistent with the PUML.
+3. **HOST path advertising interval:** When the HOST stops scanning and continues advertising, `start_advertising()` uses the normal relaxed interval (`0x800` units = 1.28 s). This is acceptable because the JOIN has already discovered the HOST; the HOST only needs to remain connectable.
 
 ---
 
-## Summary
+## Conclusion
 
-The Stage 11 v0.1.7 revision correctly fixes the BLE multiplayer JOIN connection failure described in `docs/BugReport_CYD_RPS_v0.1.6.md` §8. The code is well-documented, compiles for both target environments, passes `pio check` with zero high-severity issues, and satisfies all Stage 12 quality gates. No regressions were identified in the prior v0.1.2–v0.1.6 fixes.
+The v0.1.8 BLE discovery-window fix is **ready to proceed**. It addresses the root cause identified in `docs/BugReport_CYD_RPS_v0.1.7.md` (the JOIN stopping advertising before the HOST discovers it), keeps all radio work on the dedicated task, preserves the existing state-machine contract, and compiles for both the physical hardware and Wokwi environments.
 
-**Recommended action:** Proceed to the next workflow stage.
+**Final Verdict: GO**

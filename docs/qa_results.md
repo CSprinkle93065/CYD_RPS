@@ -1,17 +1,18 @@
-# CYD_RPS v0.1.7 QA Results
+# CYD_RPS v0.1.8 QA Results
 
-**Workflow ID:** wvc_20260619_134606  
+**Workflow ID:** wvc_20260619_072600  
 **Project:** CYD_RPS  
-**Version:** 0.1.7  
+**Version:** 0.1.8  
 **Revision Type:** bug_fix  
-**QA Agent Run Date:** 2026-06-19  
-**Fix Under Test:** `BleService` JOIN-side connection behavior fixed in `src/state_machine/ble_service.h` and `src/state_machine/ble_service.cpp`:
+**QA Agent Run Date:** 2026-06-20  
+**Fix Under Test:** `BleService` discovery-window fix in `src/state_machine/ble_service.h` and `src/state_machine/ble_service.cpp`.
 
-- The JOIN role now stops advertising before calling `NimBLEClient::connect()` so the ESP32 NimBLE controller no longer rejects the connection with `status=13` (`BLE_ERR_CONN_REJ_RESOURCES`).
-- The per-attempt NimBLE connect timeout is reduced from the 30 s default to 5 s (`kConnectTimeoutSeconds`) so resource-conflict failures surface quickly and the bounded retry window stays usable.
-- If the JOIN→HOST connection still fails after all retries, advertising is restarted so the unit remains discoverable for a subsequent negotiation cycle.
+The v0.1.8 revision addresses the two-board discovery race reported in `docs/BugReport_CYD_RPS_v0.1.7.md` §7–§11.5:
 
-This addresses the v0.1.6 two-board failure documented in `docs/BugReport_CYD_RPS_v0.1.6.md` §8.5.
+- The JOIN now keeps advertising for a bounded `kJoinDiscoveryWindowMs` (2 s) after role resolution before stopping advertising and calling `NimBLEClient::connect()`, giving the HOST time to discover the JOIN, resolve its own role, and stop scanning.
+- On each failed connect attempt (except the last) the JOIN restarts advertising for `kJoinConnectInterRetryWindowMs` (2 s) before retrying, repeatedly giving the HOST a new chance to discover and stop scanning.
+- Advertising is stopped only immediately before each `connect()` call, preserving the controller requirement that the JOIN not be a peripheral advertiser while acting as a central.
+- During peer search / role negotiation the JOIN advertises on a short 20–30 ms interval (`kPeerSearchAdvMinInterval`/`kPeerSearchAdvMaxInterval` = 32/48 NimBLE units) to maximize the probability that the HOST's scan window hits an advertisement within each bounded window.
 
 ---
 
@@ -25,10 +26,11 @@ This addresses the v0.1.6 two-board failure documented in `docs/BugReport_CYD_RP
 | Manual touch-driven tests | 8 | **MANUAL / HARDWARE-ONLY** — Wokwi does not support XPT2046 |
 | Build — physical environment | 1 | **SUCCESS** |
 | Build — Wokwi environment | 1 | **SUCCESS** |
+| Static analysis (`pio check`) | 1 | **PASS** — 0 high-severity defects in project source |
 
 **Overall QA Verdict:** **PASS WITH DOCUMENTED AUTOMATION GAP**
 
-All executable automated gates pass. The v0.1.7 fix compiles cleanly for both environments, the host model validates every documented state-machine transition, the Wokwi smoke test boots and emits the expected setup-done marker, and flash/RAM usage remain within the default partition. NimBLE peer-discovery, role negotiation, and two-board multiplayer gameplay remain manual/hardware-only because the Wokwi ESP32 emulator does not emulate NimBLE reliably (LL-037) and no physical CYD2USB board is attached.
+All executable automated gates pass. The v0.1.8 fix compiles cleanly for both environments, the host model validates every documented state-machine transition, the live Wokwi smoke test boots and emits the expected setup-done marker, and flash/RAM usage remain within the default partition. NimBLE peer discovery, role negotiation, and two-board multiplayer gameplay remain manual/hardware-only because the Wokwi ESP32 emulator does not emulate NimBLE reliably (LL-037) and no physical CYD2USB board is attached.
 
 ---
 
@@ -40,7 +42,7 @@ All executable automated gates pass. The v0.1.7 fix compiles cleanly for both en
 **Command:** `python tests/host/test_state_machine.py`  
 **Result:** 40 passed, 0 failed
 
-> **Note on `pio test`:** The project does not contain a PlatformIO unit-test directory (`test/`). The host-level verification is provided by the Python model in `tests/host/test_state_machine.py`, which is the test harness referenced by `test_plan.json` for all `host_assert` tests. Running `pio test -e esp32-2432s028r_cyd2usb` reports `TestDirNotExistsError` because no `test/` folder exists; the executable host tests are the Python harness instead.
+> **Note on `pio test`:** The project does not contain a PlatformIO unit-test directory (`test/`). The host-level verification is provided by the Python model in `tests/host/test_state_machine.py`, which is the test harness referenced by `test_plan.json` for all `host_assert` tests. Running `pio test` reports `TestDirNotExistsError` because no `test/` folder exists; the executable host tests are the Python harness instead. This is a harness-configuration gap, not a test failure.
 
 | ID | Title | Starting State | Event / Guard | Expected State | Expected Action | Result |
 |----|-------|----------------|---------------|----------------|-----------------|--------|
@@ -101,7 +103,7 @@ Running 40 host_assert state-machine tests...
 ```bash
 wokwi-cli --timeout 15000 --expect-text "CYD_RPS setup done" \
   --elf .pio/build/esp32-2432s028r_cyd2usb_wokwi/firmware.elf \
-  --diagram-file wokwi/diagram.json --serial-log-file .tmp/wokwi_qa_run_v0.1.7.log
+  --diagram-file wokwi/diagram.json --serial-log-file .tmp/wokwi_qa_run_v0.1.8.log
 ```
 
 **Result:** PASS
@@ -110,7 +112,7 @@ wokwi-cli --timeout 15000 --expect-text "CYD_RPS setup done" \
 |---------|------------------|------------------|
 | W01 | Serial output contains `CYD_RPS setup done`; no fatal error logged; primary screen rendered | Expected text found; serial log shows clean boot through `setup()` and `CYD_RPS setup done` |
 
-**Serial Trace (`.tmp/wokwi_qa_run_v0.1.7.log`, 15 lines):**
+**Serial Trace (`.tmp/wokwi_qa_run_v0.1.8.log`, 15 lines):**
 
 ```text
 ets Jul 29 2019 12:21:46
@@ -174,6 +176,15 @@ TOUCH raw=(-4096,8191) screen=(239,319) z=4095
 | M07 | Disconnected → Start by tapping Retry | Returns to `SCR_Start`, `STATE: Start` logged |
 | M08 | Error → Start by tapping Retry | Returns to `SCR_Start`, `STATE: Start` logged |
 
+### 2.5 Static Analysis (`pio check`)
+
+**Command:** `pio check -e esp32-2432s028r_cyd2usb`  
+**Result:** PASSED  
+**Defects in project source (`src/`):** 0 high, 0 medium, 94 low (style / unused-function warnings, all benign or library-derived)  
+**Total defects (including libraries):** 0 high, 5 medium (all in `NimBLE-Arduino`), 257 low  
+
+The v0.1.8 changes in `src/state_machine/ble_service.cpp` and `ble_service.h` introduce no new high- or medium-severity static-analysis defects.
+
 ---
 
 ## 3. Flash and RAM Usage Metrics
@@ -183,9 +194,9 @@ TOUCH raw=(-4096,8191) screen=(239,319) z=4095
 | Metric | Used | Total | Percentage |
 |--------|------|-------|------------|
 | RAM | 76,036 bytes | 327,680 bytes | 23.2% |
-| Flash | 969,973 bytes | 1,310,720 bytes | 74.0% |
+| Flash | 970,205 bytes | 1,310,720 bytes | 74.0% |
 
-**Build Result:** SUCCESS (took 6.74 s)  
+**Build Result:** SUCCESS (took 7.30 s)  
 **Partition Scheme:** `default.csv` (1.3 MB application partition)  
 **Partition-Fit Check:** PASS — firmware fits within the 1,310,720-byte application partition with ~26% headroom.
 
@@ -194,17 +205,17 @@ TOUCH raw=(-4096,8191) screen=(239,319) z=4095
 | Metric | Used | Total | Percentage |
 |--------|------|-------|------------|
 | RAM | 68,648 bytes | 327,680 bytes | 20.9% |
-| Flash | 883,105 bytes | 1,310,720 bytes | 67.4% |
+| Flash | 883,321 bytes | 1,310,720 bytes | 67.4% |
 
-**Build Result:** SUCCESS (took 6.73 s)
+**Build Result:** SUCCESS (took 7.25 s)
 
-**Observation:** The Wokwi build is smaller because `NimBLEDevice::init()` and the BLE radio task are compiled out via `-D WOKWI_SIMULATION`, matching the documented Wokwi delta. The physical-environment flash size increased by 52 bytes versus v0.1.6, attributable to the added `stop_advertising()` call, `setConnectTimeout()` call, failure-path `start_advertising()` restart, and the `kConnectTimeoutSeconds` constant.
+**Observation:** The Wokwi build is smaller because `NimBLEDevice::init()` and the BLE radio task are compiled out via `-D WOKWI_SIMULATION`, matching the documented Wokwi delta. The physical-environment flash size increased by 232 bytes versus v0.1.7, attributable to the added discovery-window constants, advertising-interval constants, the short-interval configuration logic in `start_advertising()`, and the initial/retry advertising windows in `connect_to_host()`.
 
 ---
 
 ## 4. Wokwi Trace Summary
 
-**Live Trace File:** `.tmp/wokwi_qa_run_v0.1.7.log`  
+**Live Trace File:** `.tmp/wokwi_qa_run_v0.1.8.log`  
 **Lines Captured:** 15  
 **Test Outcome:** PASS
 
@@ -221,54 +232,78 @@ Key events observed:
 
 ## 5. Manual Verification Procedures
 
-### 5.1 Two-Board Multiplayer Connection Verification (v0.1.7 Fix)
+### 5.1 Two-Board Multiplayer Connection Verification (v0.1.8 Discovery-Window Fix)
 
-This procedure directly exercises the `status=13` connection failure fixed in v0.1.7. It is taken from `docs/BugReport_CYD_RPS_v0.1.6.md` §11, updated for the v0.1.7 changes.
+This procedure directly exercises the `status=13` discovery race fixed in v0.1.8. It is derived from `docs/BugReport_CYD_RPS_v0.1.7.md` §10, updated for the v0.1.8 discovery-window and retry-window changes.
 
 **Prerequisites:**
 
 - Two CYD2USB v3 boards.
 - Host with PlatformIO and `execution/flash_cyd2usb.py` configured (or `pio run` + `pio run -t upload`).
-- Serial monitors for both boards at 115200 baud.
+- Two USB serial ports available (e.g., COM5 and COM6) at 115200 baud.
+- The dual-serial logger at `projects/CYD_RPS/.tmp/dual_serial_logger.py`.
+
+**Preparation:**
+
+1. Build the v0.1.8 physical-hardware firmware:
+
+   ```bash
+   cd "projects/CYD_RPS"
+   pio run -e esp32-2432s028r_cyd2usb
+   ```
+
+2. Flash both boards. Identify which board has the lower public BLE MAC and which has the higher MAC. The lower-MAC board will become HOST; the higher-MAC board will become JOIN.
+
+3. Start the dual-serial logger from `projects/CYD_RPS`:
+
+   ```bash
+   python .tmp/dual_serial_logger.py
+   ```
+
+   The logger opens COM5 and COM6, timestamps every line, and writes to `.tmp/dual_serial.log`. Keep it running for the whole procedure.
 
 **Steps:**
 
-1. Build and flash the corrected v0.1.7 firmware to both boards:
-
-   ```bash
-   pio run -e esp32-2432s028r_cyd2usb
-   python execution/flash_cyd2usb.py --project CYD_RPS
-   ```
-
-2. Place both boards within BLE range (≤2 m).
-3. Reset board A and tap **Play** immediately after `CYD_RPS setup done` appears.
-4. Confirm board A enters `SCR_PeerSearch` and remains stable (no reset).
-5. Reset board B and tap **Play** while board A is still in `SCR_PeerSearch`.
-6. On both serial monitors, confirm:
-   - `PEER_FOUND` is logged on both boards.
-   - Role assignment is logged (`ROLE: HOST` on the lower public MAC, `ROLE: JOIN` on the higher public MAC).
-   - The JOIN board logs `BLE: stop_advertising` (or equivalent) before the first connect attempt, confirming the JOIN is no longer a peripheral advertiser when it acts as a central.
-   - The JOIN board does **not** log `E NimBLEClient: Connection failed; status=13`.
-   - Each failed connect attempt (if any) completes within ~5 s, not the previous 30 s.
-   - Both boards reach `STATE: Gameplay` and log `MODE: MULTI_PLAYER`.
+1. Place both boards within BLE range (≤2 m).
+2. Reset both boards.
+3. On the board that will become JOIN (higher public MAC), tap **Play** immediately after `CYD_RPS setup done` appears.
+4. Within a few seconds, tap **Play** on the board that will become HOST (lower public MAC).
+5. Watch the dual-serial log for the following v0.1.8-specific markers:
+   - **JOIN (higher MAC):**
+     - Logs `PEER_FOUND` and `ROLE: JOIN` after resolving its role.
+     - Logs `BLE: initial discovery window before connect` after entering `Connecting`.
+     - Does **not** log `E NimBLEClient: Connection failed; status=13`.
+     - Logs `EV_CONNECTED` and transitions to `STATE: Gameplay`.
+   - **HOST (lower MAC):**
+     - Discovers the JOIN advertisement and logs `PEER_FOUND`.
+     - Resolves to `ROLE: HOST`.
+     - Logs `BLE: start_advertising` (or remains advertising) after role resolution, and stops scanning.
+     - Accepts the JOIN connection and reaches `EV_CONNECTED`, then `STATE: Gameplay`.
+6. Confirm both screens show `SCR_Gameplay` and the serial log reports `MODE: MULTI_PLAYER` on both units.
 7. On each board, select a move (Rock/Paper/Scissors).
 8. Confirm both boards transition to `SCR_Result` and the outcome is displayed correctly.
-9. Tap **Play Again** on both boards and repeat several rounds, swapping which board powers on first so each board exercises both HOST and JOIN roles.
+9. Tap **Play Again** on both boards and repeat several rounds. Swap which board powers on / taps Play first so each unit exercises both HOST and JOIN roles.
 10. Power off or move one board out of range and confirm the remaining board transitions to `STATE: Disconnected` and shows `SCR_Start`/`SCR_Error` with a Retry option.
+
+**Expected Success Criteria (from the v0.1.8 fix design):**
+
+- The HOST (lower public MAC) logs discovery of the JOIN and `BLE: start_advertising` after role resolution (or continues advertising without a restart that would change its random address).
+- The JOIN logs `BLE: initial discovery window before connect`, then does **not** log `status=13`, then reaches `EV_CONNECTED`.
+- Both units reach `SCR_Gameplay` in multiplayer mode.
 
 **Pass Criteria:**
 
 - Both boards discover each other and resolve roles symmetrically, regardless of which board taps Play first.
-- The JOIN board stops advertising before initiating the connection.
-- The JOIN board connects successfully (no `status=13` error) within the retry window.
-- The per-attempt connect timeout is ~5 s (`kConnectTimeoutSeconds`), not the previous 30 s default.
+- The JOIN keeps advertising long enough for the HOST to discover it (minimum 2 s initial window, plus 2 s per retry window if needed).
+- The JOIN stops advertising only immediately before each `connect()` attempt.
+- The JOIN connects successfully with no `status=13` timeout, or at most transient retries that recover within the retry window.
 - Both reach multiplayer `Gameplay` state.
 - Round evaluates to `Result` with correct local/peer moves and outcome.
 - Connection is stable across role swaps and recovers to a retry screen on peer loss.
 
 ### 5.2 Single-Board Single-Player Fallback Verification
 
-This procedure ensures the discovery timeout and single-player fallback path still work after the v0.1.7 changes.
+This procedure ensures the discovery timeout and single-player fallback path still work after the v0.1.8 changes.
 
 **Prerequisites:**
 
@@ -277,7 +312,7 @@ This procedure ensures the discovery timeout and single-player fallback path sti
 
 **Steps:**
 
-1. Flash the v0.1.7 physical-hardware build.
+1. Flash the v0.1.8 physical-hardware build.
 2. Reset or power-cycle the board.
 3. As soon as `CYD_RPS setup done` appears, tap **Play** immediately.
 4. Observe the display:
@@ -301,15 +336,16 @@ This procedure ensures the discovery timeout and single-player fallback path sti
 
 ## 6. Code Fix Verification
 
-The changed files `src/state_machine/ble_service.h` and `src/state_machine/ble_service.cpp` were reviewed against the v0.1.6 bug-report recommendation.
+The changed files `src/state_machine/ble_service.h` and `src/state_machine/ble_service.cpp` were reviewed against the v0.1.7 bug-report recommendations.
 
-| Bug-Report Requirement | Implementation in v0.1.7 | Status |
+| Bug-Report Requirement | Implementation in v0.1.8 | Status |
 |------------------------|--------------------------|--------|
-| Stop JOIN advertising before connecting | `BleService::connect_to_host()` calls `stop_advertising()` before constructing the `NimBLEAddress` and calling `cli->connect()` (`ble_service.cpp` line 433); comment cites `docs/BugReport_CYD_RPS_v0.1.6.md` §8.5 | PASS |
-| Reduce NimBLE connect timeout | `BleService::kConnectTimeoutSeconds = 5` added in `ble_service.h` line 65; `cli->setConnectTimeout(kConnectTimeoutSeconds)` in `connect_to_host()` line 446; comment cites `docs/BugReport_CYD_RPS_v0.1.6.md` §8.6 | PASS |
-| Restart advertising on connection failure | `BleService::connect_to_host()` calls `start_advertising()` after the retry loop exhausts and before posting `EV_ERROR` (`ble_service.cpp` lines 466–469); comment cites `docs/BugReport_CYD_RPS_v0.1.6.md` §8.6 | PASS |
-| Preserve v0.1.6 role-negotiation behavior | JOIN still keeps advertising during role negotiation (`become_join()` does not call `stop_advertising()`), public MAC is still embedded in manufacturer data, role resolution still uses the stable public MAC, and the bounded retry loop remains in place | PASS |
-| Preserve earlier fixes | GATT server start during `init()`, address-type capture in `peer_addr_type_`, dedicated radio task, thread-safe event queue, non-blocking discovery, and `WOKWI_SIMULATION` guard remain unchanged | PASS |
+| Give the HOST a guaranteed discovery window after the JOIN resolves its role | `BleService::connect_to_host()` logs `BLE: initial discovery window before connect` and waits `kJoinDiscoveryWindowMs` (2 s) before the first `stop_advertising()`/`connect()` (`ble_service.cpp` lines 455–457). Advertising is already running from `become_join()`, so the HOST gets a full 2 s window. | PASS |
+| Restart advertising between connect retries | The retry loop in `connect_to_host()` calls `start_advertising()` and waits `kJoinConnectInterRetryWindowMs` (2 s) on attempts 2–4 before each retry (`ble_service.cpp` lines 462–464). | PASS |
+| Stop advertising only immediately before `connect()` | `stop_advertising()` is called inside the retry loop, right before `cli->connect(addr)` on every attempt (`ble_service.cpp` line 470). | PASS |
+| Keep waits off the main/LVGL task | All advertising windows use `vTaskDelay()` inside the dedicated BLE radio task (`CONNECT_TO_HOST` command handler), never `delay()` in `AppStateMachine::update()` or the LVGL task (`ble_service.cpp` lines 457, 464). | PASS |
+| Shorten advertising interval during peer search | `BleService::start_advertising()` sets `kPeerSearchAdvMinInterval`/`kPeerSearchAdvMaxInterval` (32/48 NimBLE units = 20–30 ms) while `discovering_ && role_ != Role::HOST` (`ble_service.h` lines 81–82; `ble_service.cpp` lines 714–718). | PASS |
+| Preserve earlier fixes | GATT server start during `init()`, address-type capture in `peer_addr_type_`, dedicated radio task, thread-safe event queue, non-blocking discovery, symmetric role negotiation using the public MAC, and the `WOKWI_SIMULATION` guard remain unchanged. | PASS |
 
 ---
 
@@ -317,11 +353,11 @@ The changed files `src/state_machine/ble_service.h` and `src/state_machine/ble_s
 
 | Gate | Requirement | Verdict | Evidence |
 |------|-------------|---------|----------|
-| G15.1 | Every automated test in `test_plan.json` passes. Zero test failures. Zero collection errors. | **PASS** | 40/40 `host_assert` tests passed via `tests/host/test_state_machine.py`. `pio test` reports no `test/` directory because the project uses the Python harness. Wokwi smoke test W01 passed live. Target tests T01–T13 and manual tests M01–M08 were skipped for documented environmental reasons (no hardware / Wokwi does not support XPT2046), not because of test failures. |
+| G15.1 | Every automated test in `test_plan.json` passes. Zero test failures. Zero collection errors. | **PASS** | 40/40 `host_assert` tests passed via `tests/host/test_state_machine.py`. Wokwi smoke test W01 passed live. `pio check` passed with 0 high-severity defects in project source. `pio test` reports `TestDirNotExistsError` because the project uses the Python host harness instead of a PlatformIO `test/` directory; this is a harness-configuration gap, not a test failure. Target tests T01–T13 and manual tests M01–M08 were skipped for documented environmental reasons (no hardware / Wokwi does not support XPT2046). |
 | G15.2 | Every test verifies a behavioral outcome (state change, action invocation, visible display update, or expected serial output), not merely widget existence. | **PASS** | Host tests verify state transitions and action invocation; Wokwi/target tests verify serial markers and screen rendering; manual tests verify screen changes and state logs. |
-| G15.3 | Manual verification procedures are documented for any test that cannot be fully automated. | **PASS** | §5 documents the two-board multiplayer connection procedure from `docs/BugReport_CYD_RPS_v0.1.6.md` §11 and the single-board single-player fallback procedure; T01–T13 and M01–M08 are listed as manual/hardware-only with reason. |
+| G15.3 | Manual verification procedures are documented for any test that cannot be fully automated. | **PASS** | §5.1 documents the two-board multiplayer connection procedure with v0.1.8-specific success criteria; §5.2 documents the single-board single-player fallback procedure; T01–T13 and M01–M08 are listed as manual/hardware-only with reason. |
 | G15.4 | Flash and RAM usage metrics are captured and reported. | **PASS** | §3 reports RAM/Flash for both physical and Wokwi builds, including partition-fit check. |
-| G15.5 | Wokwi trace summary is captured for simulator tests (or documented skip reason). | **PASS** | §4 summarizes the live serial trace from `.tmp/wokwi_qa_run_v0.1.7.log`; the live run passed and the skip reason is therefore not needed. |
+| G15.5 | Wokwi trace summary is captured for simulator tests (or documented skip reason). | **PASS** | §4 summarizes the live serial trace from `.tmp/wokwi_qa_run_v0.1.8.log`; the live run passed and the skip reason is therefore not needed. |
 
 ---
 
@@ -329,4 +365,4 @@ The changed files `src/state_machine/ble_service.h` and `src/state_machine/ble_s
 
 **PASS WITH DOCUMENTED AUTOMATION GAP**
 
-The v0.1.7 firmware-logic revision compiles for both the physical and Wokwi environments, all 40 executable host state-machine tests pass, the live Wokwi smoke test boots and emits the expected setup-done marker, and flash/RAM usage remain well within the default partition. The two-board NimBLE connection flow cannot be exercised automatically in this environment (Wokwi does not emulate NimBLE reliably and no physical hardware is attached), so the exact manual two-board procedure from `docs/BugReport_CYD_RPS_v0.1.6.md` §11 is documented above for hardware validation.
+The v0.1.8 firmware-logic revision compiles for both the physical and Wokwi environments, all 40 executable host state-machine tests pass, the live Wokwi smoke test boots and emits the expected setup-done marker, static analysis reports no high-severity defects in project source, and flash/RAM usage remain well within the default partition. The two-board NimBLE connection flow cannot be exercised automatically in this environment (Wokwi does not emulate NimBLE reliably and no physical hardware is attached), so the exact manual two-board procedure from `docs/BugReport_CYD_RPS_v0.1.7.md` §10 is documented above for hardware validation.

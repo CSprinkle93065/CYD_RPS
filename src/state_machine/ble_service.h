@@ -52,17 +52,40 @@ public:
     // docs/BugReport_CYD_RPS_v0.1.5.md §6.2 and §8.2.
     static constexpr int kConnectRetries = 4;
 
-    // Backoff between connection retries (milliseconds). Short enough to keep
-    // total negotiation time reasonable, long enough to let the HOST finish
-    // role resolution without blocking the radio task indefinitely.
-    static constexpr uint32_t kConnectRetryDelayMs = 250;
-
     // NimBLEClient::connect() default timeout is 30 s. When the controller
-    // rejects the attempt with status=13 (BLE_ERR_CONN_REJ_RESOURCES), waiting
-    // 30 s per retry makes the bounded retry window unusable. Reducing the
-    // timeout to 5 s lets the JOIN retry quickly and keeps total negotiation
-    // time under ~20 s. See docs/BugReport_CYD_RPS_v0.1.6.md §8.6.
+    // reports a connect failure with status=13 (BLE_HS_ETIMEOUT, "Operation
+    // timed out."), waiting 30 s per retry makes the bounded retry window
+    // unusable. Reducing the timeout to 5 s lets the JOIN retry quickly and
+    // keeps total negotiation time under ~30 s including the discovery windows
+    // below. See docs/BugReport_CYD_RPS_v0.1.6.md §8.6 and
+    // docs/BugReport_CYD_RPS_v0.1.7.md §11.2.
     static constexpr uint8_t kConnectTimeoutSeconds = 5;
+
+    // Discovery window the JOIN keeps advertising after role resolution before
+    // stopping advertising and initiating the first connection attempt. Gives
+    // the HOST multiple scan windows to discover the JOIN and resolve its own
+    // role. See docs/BugReport_CYD_RPS_v0.1.7.md §9.1.
+    static constexpr uint32_t kJoinDiscoveryWindowMs = 2000;
+
+    // Inter-retry advertising window: on each failed JOIN->HOST connect attempt
+    // (except the last), the JOIN restarts advertising for this duration before
+    // the next connect() so the HOST gets another chance to discover it and stop
+    // scanning. See docs/BugReport_CYD_RPS_v0.1.7.md §9.2.
+    static constexpr uint32_t kJoinConnectInterRetryWindowMs = 2000;
+
+    // Advertising interval during peer search / role negotiation (NimBLE units,
+    // 1 unit = 0.625 ms). A shorter interval makes it more likely the peer's
+    // scan window hits our advertisement within the bounded discovery window.
+    // 32 units = 20 ms, 48 units = 30 ms; both are BLE-compliant.
+    // See docs/BugReport_CYD_RPS_v0.1.7.md §9.3.
+    static constexpr uint16_t kPeerSearchAdvMinInterval = 32;
+    static constexpr uint16_t kPeerSearchAdvMaxInterval = 48;
+
+    // Normal (relaxed) advertising interval used after role negotiation, e.g.
+    // by the HOST once it has stopped scanning. 0x800 units = 1.28 s, matching
+    // NimBLE's effective default advertising interval when 0 is requested.
+    static constexpr uint16_t kNormalAdvMinInterval = 0x800;
+    static constexpr uint16_t kNormalAdvMaxInterval = 0x800;
 
     // Test/development company ID placed at the start of the BLE advertisement
     // manufacturer-specific data. The full payload is company ID + 6-byte

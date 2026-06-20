@@ -1,10 +1,10 @@
 # CYD_RPS — Release Context
 
 **Project:** CYD_RPS  
-**Version:** 0.1.7  
-**Workflow ID:** wvc_20260619_134606  
+**Version:** 0.1.8  
+**Workflow ID:** wvc_20260619_072600  
 **Revision Type:** bug_fix  
-**Release Date:** 2026-06-19  
+**Release Date:** 2026-06-20  
 **Board Version:** CYD2USB_v3 (ESP32-2432S028R)  
 **Target Environment:** hardware  
 **Branch:** main  
@@ -14,16 +14,18 @@
 
 ## Bug-Fix Summary
 
-This release fixes the JOIN-side BLE connection failure reported in v0.1.6 (`docs/BugReport_CYD_RPS_v0.1.6.md` §8.5).
+This release fixes the BLE two-player discovery race reported in v0.1.7 (`docs/BugReport_CYD_RPS_v0.1.7.md` §7–§11.5).
 
-After v0.1.6 made role negotiation symmetric, the JOIN still remained a peripheral advertiser while attempting to act as a central and connect to the HOST. The ESP32 NimBLE controller rejected the connection with `E NimBLEClient: Connection failed; status=13` (`BLE_ERR_CONN_REJ_RESOURCES`). Each failed attempt blocked for the default 30 s connect timeout, producing an apparent indefinite "Connecting" stall.
+After v0.1.7 stopped the JOIN's advertising at the start of `connect_to_host()`, the peer that should become HOST often had not yet discovered the JOIN and therefore never resolved its role or stopped scanning. When the JOIN tried to connect, the HOST was still scanning and could not accept the connection, producing repeated `E NimBLEClient: Connection failed; status=13` (`BLE_HS_ETIMEOUT`) every 5 s. The real issue is a discovery race, not the timeout value.
 
 | Fix | Location | Details |
 |-----|----------|---------|
-| JOIN stops advertising before connecting | `src/state_machine/ble_service.cpp` | `BleService::connect_to_host()` calls `stop_advertising()` after creating the `NimBLEClient` and before the retry loop, removing the controller resource conflict. |
-| Reduced NimBLE connect timeout | `src/state_machine/ble_service.h` / `ble_service.cpp` | Added `kConnectTimeoutSeconds = 5` and called `cli->setConnectTimeout(kConnectTimeoutSeconds)` before the first `connect()` attempt, reducing the per-attempt timeout from 30 s to 5 s. |
-| Restart advertising on connection failure | `src/state_machine/ble_service.cpp` | If all retries fail, `connect_to_host()` calls `start_advertising()` before posting `EV_ERROR`, keeping the unit discoverable for a subsequent negotiation cycle. |
-| In-file rationale comments | `src/state_machine/ble_service.cpp` / `ble_service.h` | Comments cite `docs/BugReport_CYD_RPS_v0.1.6.md` §8.5–8.6. |
+| Guaranteed JOIN discovery window | `src/state_machine/ble_service.cpp` | After the JOIN resolves its role, `BleService::connect_to_host()` keeps advertising for `kJoinDiscoveryWindowMs` (2 s) before stopping advertising and initiating the first `connect()` attempt, giving the HOST time to discover the JOIN and resolve to HOST. |
+| Per-retry discovery window | `src/state_machine/ble_service.cpp` | On each failed `connect()` attempt (except the last), the JOIN restarts advertising, waits `kJoinConnectInterRetryWindowMs` (2 s), stops advertising, then retries `connect()`. This repeatedly gives the HOST new chances to discover and stop scanning. |
+| Stop advertising only immediately before connect | `src/state_machine/ble_service.cpp` | Advertising is kept running during every wait and is stopped only immediately before each `connect()` call. |
+| Dedicated radio task ownership | `src/state_machine/ble_service.cpp` | All scan/advertise/connect operations remain inside the radio-task `CONNECT_TO_HOST` command handler; the wait is implemented with `vTaskDelay()` inside the radio task, never with `delay()` in `AppStateMachine::update()`. |
+| Shortened advertising interval | `src/state_machine/ble_service.h` / `ble_service.cpp` | During peer search / role negotiation the JOIN advertises on a 20–30 ms interval (`kPeerSearchAdvMinInterval`/`kPeerSearchAdvMaxInterval` = 32/48 NimBLE units) so the HOST's scan window is more likely to hit an advertisement within each bounded window. |
+| In-file rationale comments | `src/state_machine/ble_service.cpp` / `ble_service.h` | Every changed constant/timeout has an adjacent comment citing `docs/BugReport_CYD_RPS_v0.1.7.md` §9.1–§9.3 and §11.2 (LL-043). |
 
 This v0.1.7 fix preserves all v0.1.4–v0.1.6 fixes: GATT server start during `init()`, address-type capture in `peer_addr_type_`, dedicated BLE radio task, larger NimBLE host-task stack, heap guard, reduced LVGL memory, deferred discovery out of LVGL event context, thread-safe event queue, symmetric role negotiation using the public MAC, and the `WOKWI_SIMULATION` guard.
 
@@ -33,7 +35,7 @@ This v0.1.7 fix preserves all v0.1.4–v0.1.6 fixes: GATT server start during `i
 
 | Artifact | Path |
 |----------|------|
-| Release ZIP | `projects/CYD_RPS/dist/CYD_RPS_v0.1.7.zip` |
+| Release ZIP | `projects/CYD_RPS/dist/CYD_RPS_v0.1.8.zip` |
 | Firmware binary | `firmware.bin` (inside ZIP and at `projects/CYD_RPS/.pio/build/esp32-2432s028r_cyd2usb/firmware.bin`) |
 | Build configuration | `platformio.ini` (inside ZIP) |
 | Flash scripts | `flash_esptool.bat`, `flash_esptool.sh`, `flash_cyd_rps.bat` (inside ZIP) |
@@ -115,7 +117,7 @@ CYD_RPS setup done
 | Integration code review | PASS |
 | Wokwi smoke test | PASS |
 | Physical target tests | MANUAL / HARDWARE-ONLY — no board attached |
-| GitHub release | PASS — release `v0.1.7` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.7 with `firmware.bin` and `CYD_RPS_v0.1.7.zip` attached |
+| GitHub release | PASS — release `v0.1.8` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.8 with `firmware.bin` and `CYD_RPS_v0.1.8.zip` attached |
 
 See `docs/qa_results.md` for the full QA report.
 
@@ -126,11 +128,11 @@ See `docs/qa_results.md` for the full QA report.
 **GitHub release created successfully.**
 
 - Repository: https://github.com/CSprinkle93065/CYD_RPS
-- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.7
-- Tag: `v0.1.7`
+- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.8
+- Tag: `v0.1.8`
 - Attachments:
   - `firmware.bin`
-  - `CYD_RPS_v0.1.7.zip`
+  - `CYD_RPS_v0.1.8.zip`
 - Local commit and tag were pushed to `origin/main`.
 
 ---
