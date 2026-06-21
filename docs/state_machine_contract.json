@@ -1,18 +1,23 @@
 {
   "metadata": {
-    "workflow_id": "wvc_20260617_044037",
+    "workflow_id": "wvc_20260617_171607",
     "project_name": "CYD_RPS",
-    "version": "0.1.0",
+    "version": "0.2.0",
+    "revision_type": "minor_revision",
     "board_version": "CYD2USB_v3",
-    "target_environment": "wokwi",
-    "generated_at": "2026-06-17T12:26:59+08:00",
-    "contract_version": "1.0.0"
+    "target_environment": "hardware",
+    "generated_at": "2026-06-21T15:10:02+08:00",
+    "contract_version": "1.1.0"
   },
   "state_machine_file": "docs/state_machine.puml",
   "notes": [
-    "SCR_Gameplay is the visual screen for both the Gameplay and SinglePlayerFallback states.",
+    "v0.2.0 replaces automatic role negotiation with explicit Host selection and peer auto-join.",
+    "SCR_Gameplay is the visual screen for both multiplayer and single-player modes.",
     "SCR_Error is the visual screen for Error, Halted, and Disconnected states; the message text distinguishes them.",
-    "Controls that do not accept touch events bind to state-entry UI update actions rather than user input events."
+    "Dynamic labels whose content depends on firmware state are updated through dedicated UI adapter functions called by the state machine or BLE service, not by integration glue (LL-041).",
+    "All NimBLE radio work is owned by the dedicated radio task and is never invoked directly from a state-machine action running inside LVGL timer context (LL-039, LL-042).",
+    "The state-machine event queue is protected by a FreeRTOS mutex because BLE callbacks post events from a different task (LL-040).",
+    "Under WOKWI_SIMULATION, NimBLE initialization is skipped; the state-machine flow is preserved by treating BLE init as success and using the Solo path for automated tests (LL-037)."
   ],
   "bindings": [
     {
@@ -21,110 +26,175 @@
       "lvgl_object_type": "lv_label",
       "event": null,
       "bound_state_machine_action": "ui_show_screen_start() sets static text 'CYD RPS' on entry to Start / Disconnected",
+      "ui_adapter_function": "ui_show_screen_start",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
         "visible_in_states": ["Start", "Disconnected"],
-        "hidden_in_states": ["Boot", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Error", "Halted"]
+        "hidden_in_states": ["Boot", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Error", "Halted"]
       }
     },
     {
-      "control_id": "lblSubtitle",
+      "control_id": "lblDeviceId",
       "screen": "SCR_Start",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_show_screen_start() sets static text 'Tap Play to find a peer' on entry to Start / Disconnected",
+      "bound_state_machine_action": "ui_set_device_id() updates lblDeviceId with the four-hex-digit local device ID derived from the public MAC",
+      "ui_adapter_function": "ui_set_device_id",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Start", "Disconnected"],
-        "hidden_in_states": ["Boot", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Error", "Halted"]
+        "visible_in_states": ["Start", "HostWait"],
+        "hidden_in_states": ["Boot", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
       }
     },
     {
-      "control_id": "btnPlay",
+      "control_id": "lblStatus",
+      "screen": "SCR_Start",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_set_status() updates lblStatus with runtime status text (e.g., 'Ready', 'Searching for host...', 'Host found — joining...')",
+      "ui_adapter_function": "ui_set_status",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Start", "HostWait", "Joining"],
+        "hidden_in_states": ["Boot", "HostTimeoutDialog", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "btnHostGame",
       "screen": "SCR_Start",
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
-      "bound_state_machine_action": "on_play_button_clicked() -> post_event(EV_PLAY)",
-      "transitions_driven": ["Start --> PeerSearch"],
+      "bound_state_machine_action": "on_host_game_button_clicked() -> post_event(EV_HOST_GAME)",
+      "transitions_driven": ["Start --> HostWait"],
       "enable_disable_visibility_rules": {
         "visible_in_states": ["Start"],
-        "hidden_in_states": ["Boot", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "hidden_in_states": ["Boot", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
         "enabled_in_states": ["Start"],
-        "disabled_in_states": ["Boot", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "disabled_in_states": ["Boot", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_guard": "Buttons are disabled while joining (host_mac_valid event pending) via ui_set_start_buttons_enabled(false)"
       }
     },
     {
-      "control_id": "lblStatusStart",
+      "control_id": "btnSolo",
       "screen": "SCR_Start",
-      "lvgl_object_type": "lv_label",
-      "event": null,
-      "bound_state_machine_action": "ui_set_status() updates lblStatusStart on entry to Start / Disconnected",
-      "transitions_driven": [],
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_solo_button_clicked() -> post_event(EV_SOLO)",
+      "transitions_driven": ["Start --> Gameplay"],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Start", "Disconnected"],
-        "hidden_in_states": ["Boot", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Error", "Halted"]
+        "visible_in_states": ["Start"],
+        "hidden_in_states": ["Boot", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_in_states": ["Start"],
+        "disabled_in_states": ["Boot", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_guard": "Buttons are disabled while joining via ui_set_start_buttons_enabled(false)"
+      }
+    },
+    {
+      "control_id": "btnHome",
+      "screen": "SCR_Start",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_home_button_clicked() -> post_event(EV_RESET)",
+      "transitions_driven": ["Start --> Halted"],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Start", "HostWait", "HostTimeoutDialog", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "hidden_in_states": ["Boot", "Joining"],
+        "enabled_in_states": ["Start", "HostWait", "HostTimeoutDialog", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "disabled_in_states": ["Boot", "Joining"]
       }
     },
     {
       "control_id": "lblTitle",
-      "screen": "SCR_PeerSearch",
+      "screen": "SCR_HostWait",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_show_screen_peer_search() sets static text 'CYD RPS' on entry to PeerSearch",
+      "bound_state_machine_action": "ui_show_screen_host_wait() sets static text 'Hosting Game' on entry to HostWait",
+      "ui_adapter_function": "ui_show_screen_host_wait",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["PeerSearch"],
-        "hidden_in_states": ["Boot", "Start", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": ["HostWait", "HostTimeoutDialog"],
+        "hidden_in_states": ["Boot", "Start", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
       }
     },
     {
-      "control_id": "lblStatusSearch",
-      "screen": "SCR_PeerSearch",
+      "control_id": "lblDeviceId",
+      "screen": "SCR_HostWait",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_set_status() updates lblStatusSearch from PeerSearch, RoleNegotiating, and Connecting entry actions",
+      "bound_state_machine_action": "ui_set_device_id() updates lblDeviceId with the local device ID on HostWait entry",
+      "ui_adapter_function": "ui_set_device_id",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["PeerSearch", "RoleNegotiating", "Connecting"],
-        "hidden_in_states": ["Boot", "Start", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": ["HostWait", "HostTimeoutDialog"],
+        "hidden_in_states": ["Boot", "Start", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
       }
     },
     {
-      "control_id": "barSearch",
-      "screen": "SCR_PeerSearch",
+      "control_id": "lblStatus",
+      "screen": "SCR_HostWait",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_set_status() updates lblStatus with 'Waiting for peer to join...' on HostWait entry",
+      "ui_adapter_function": "ui_set_status",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["HostWait", "HostTimeoutDialog"],
+        "hidden_in_states": ["Boot", "Start", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "barProgress",
+      "screen": "SCR_HostWait",
       "lvgl_object_type": "lv_bar",
       "event": null,
-      "bound_state_machine_action": "ui_set_search_progress() updates barSearch value (0-100) during PeerSearch timer",
+      "bound_state_machine_action": "ui_set_host_wait_progress() updates barProgress value (100 -> 0) from AppStateMachine::update_host_wait_timer()",
+      "ui_adapter_function": "ui_set_host_wait_progress",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["PeerSearch"],
-        "hidden_in_states": ["Boot", "Start", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
-      }
-    },
-    {
-      "control_id": "lblTimeout",
-      "screen": "SCR_PeerSearch",
-      "lvgl_object_type": "lv_label",
-      "event": null,
-      "bound_state_machine_action": "ui_set_status() updates lblTimeout countdown text during PeerSearch",
-      "transitions_driven": [],
-      "enable_disable_visibility_rules": {
-        "visible_in_states": ["PeerSearch"],
-        "hidden_in_states": ["Boot", "Start", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": ["HostWait"],
+        "hidden_in_states": ["Boot", "Start", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
       }
     },
     {
       "control_id": "btnCancel",
-      "screen": "SCR_PeerSearch",
+      "screen": "SCR_HostWait",
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
-      "bound_state_machine_action": "on_cancel_button_clicked() -> post_event(EV_CANCEL)",
-      "transitions_driven": ["PeerSearch --> Start"],
+      "bound_state_machine_action": "on_cancel_host_button_clicked() -> post_event(EV_CANCEL_HOST)",
+      "transitions_driven": ["HostWait --> Start", "HostTimeoutDialog --> Start"],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["PeerSearch"],
-        "hidden_in_states": ["Boot", "Start", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
-        "enabled_in_states": ["PeerSearch"],
-        "disabled_in_states": ["Boot", "Start", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": ["HostWait"],
+        "hidden_in_states": ["Boot", "Start", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_in_states": ["HostWait"],
+        "disabled_in_states": ["Boot", "Start", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "btnRetry",
+      "screen": "HostTimeoutDialog",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_host_retry_button_clicked() -> post_event(EV_HOST_RETRY)",
+      "transitions_driven": ["HostTimeoutDialog --> HostWait"],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["HostTimeoutDialog"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_in_states": ["HostTimeoutDialog"],
+        "disabled_in_states": ["Boot", "Start", "HostWait", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "btnSolo",
+      "screen": "HostTimeoutDialog",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_host_solo_button_clicked() -> post_event(EV_SOLO)",
+      "transitions_driven": ["HostTimeoutDialog --> Gameplay"],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["HostTimeoutDialog"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "enabled_in_states": ["HostTimeoutDialog"],
+        "disabled_in_states": ["Boot", "Start", "HostWait", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
       }
     },
     {
@@ -132,23 +202,38 @@
       "screen": "SCR_Gameplay",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_show_screen_gameplay() sets static text 'Choose!' on entry to Gameplay / SinglePlayerFallback",
+      "bound_state_machine_action": "ui_show_screen_gameplay() sets static text 'Choose!' on entry to Gameplay",
+      "ui_adapter_function": "ui_show_screen_gameplay",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "SinglePlayerFallback"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": ["Gameplay", "Evaluating"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Result", "Disconnected", "Error", "Halted"]
       }
     },
     {
-      "control_id": "lblStatusGame",
+      "control_id": "lblScore",
       "screen": "SCR_Gameplay",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_set_status() updates lblStatusGame from Gameplay / SinglePlayerFallback entry and move actions",
+      "bound_state_machine_action": "ui_set_score() updates lblScore with 'W:<wins> L:<losses> D:<draws>' from session_score_t on Gameplay entry and after each round",
+      "ui_adapter_function": "ui_set_score",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "SinglePlayerFallback"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": ["Gameplay", "Evaluating", "Result"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblStatus",
+      "screen": "SCR_Gameplay",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_set_status() updates lblStatus with 'Waiting for your move' or 'Peer chose — your turn'",
+      "ui_adapter_function": "ui_set_status",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Gameplay", "Evaluating"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Result", "Disconnected", "Error", "Halted"]
       }
     },
     {
@@ -158,16 +243,16 @@
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_rock_button_clicked() -> post_event(EV_MOVE_ROCK)",
       "transitions_driven": [
-        "Gameplay --> Evaluating (when peer_move_received)",
-        "Gameplay --> Gameplay (when !peer_move_received)",
-        "SinglePlayerFallback --> Evaluating"
+        "Gameplay --> Evaluating (single-player)",
+        "Gameplay --> Evaluating (multi-player, peer_move_received)",
+        "Gameplay --> Gameplay (multi-player, !peer_move_received)"
       ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "SinglePlayerFallback"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "visible_in_states": ["Gameplay", "Evaluating"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Result", "Disconnected", "Error", "Halted"],
         "enabled_rule": "enabled when local_move == MOVE_NONE; disabled by ui_set_move_buttons_enabled(false) after any move is chosen",
-        "enabled_in_states": ["Gameplay", "SinglePlayerFallback"],
-        "disabled_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "enabled_in_states": ["Gameplay"],
+        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
       }
     },
     {
@@ -177,16 +262,16 @@
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_paper_button_clicked() -> post_event(EV_MOVE_PAPER)",
       "transitions_driven": [
-        "Gameplay --> Evaluating (when peer_move_received)",
-        "Gameplay --> Gameplay (when !peer_move_received)",
-        "SinglePlayerFallback --> Evaluating"
+        "Gameplay --> Evaluating (single-player)",
+        "Gameplay --> Evaluating (multi-player, peer_move_received)",
+        "Gameplay --> Gameplay (multi-player, !peer_move_received)"
       ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "SinglePlayerFallback"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "visible_in_states": ["Gameplay", "Evaluating"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Result", "Disconnected", "Error", "Halted"],
         "enabled_rule": "enabled when local_move == MOVE_NONE; disabled by ui_set_move_buttons_enabled(false) after any move is chosen",
-        "enabled_in_states": ["Gameplay", "SinglePlayerFallback"],
-        "disabled_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "enabled_in_states": ["Gameplay"],
+        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
       }
     },
     {
@@ -196,16 +281,30 @@
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_scissors_button_clicked() -> post_event(EV_MOVE_SCISSORS)",
       "transitions_driven": [
-        "Gameplay --> Evaluating (when peer_move_received)",
-        "Gameplay --> Gameplay (when !peer_move_received)",
-        "SinglePlayerFallback --> Evaluating"
+        "Gameplay --> Evaluating (single-player)",
+        "Gameplay --> Evaluating (multi-player, peer_move_received)",
+        "Gameplay --> Gameplay (multi-player, !peer_move_received)"
       ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "SinglePlayerFallback"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "visible_in_states": ["Gameplay", "Evaluating"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Result", "Disconnected", "Error", "Halted"],
         "enabled_rule": "enabled when local_move == MOVE_NONE; disabled by ui_set_move_buttons_enabled(false) after any move is chosen",
-        "enabled_in_states": ["Gameplay", "SinglePlayerFallback"],
-        "disabled_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "enabled_in_states": ["Gameplay"],
+        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "btnHome",
+      "screen": "SCR_Gameplay",
+      "lvgl_object_type": "lv_btn",
+      "event": "LV_EVENT_CLICKED",
+      "bound_state_machine_action": "on_home_button_clicked() -> post_event(EV_RESET)",
+      "transitions_driven": ["Gameplay --> Halted", "Evaluating --> Halted", "Result --> Halted", "Disconnected --> Halted", "Error --> Halted"],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining"],
+        "enabled_in_states": ["Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining"]
       }
     },
     {
@@ -214,10 +313,24 @@
       "lvgl_object_type": "lv_label",
       "event": null,
       "bound_state_machine_action": "ui_show_screen_result() sets static text 'Result' on entry to Result",
+      "ui_adapter_function": "ui_show_screen_result",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
         "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"]
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "lblScore",
+      "screen": "SCR_Result",
+      "lvgl_object_type": "lv_label",
+      "event": null,
+      "bound_state_machine_action": "ui_set_score() updates lblScore with updated session scoreboard on entry to Result",
+      "ui_adapter_function": "ui_set_score",
+      "transitions_driven": [],
+      "enable_disable_visibility_rules": {
+        "visible_in_states": ["Result"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
       }
     },
     {
@@ -225,11 +338,12 @@
       "screen": "SCR_Result",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_show_screen_result() sets text 'You: <move>' on entry to Result",
+      "bound_state_machine_action": "ui_show_screen_result() sets lblLocalMove text 'You: <move>' from local move on entry to Result",
+      "ui_adapter_function": "ui_show_screen_result",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
         "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"]
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
       }
     },
     {
@@ -237,11 +351,12 @@
       "screen": "SCR_Result",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_show_screen_result() sets text 'Peer: <move>' on entry to Result",
+      "bound_state_machine_action": "ui_show_screen_result() sets lblPeerMove text 'Peer: <move>' from peer/opponent move on entry to Result",
+      "ui_adapter_function": "ui_show_screen_result",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
         "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"]
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
       }
     },
     {
@@ -249,11 +364,12 @@
       "screen": "SCR_Result",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_show_screen_result() sets outcome text/color (WIN/LOSE/DRAW) on entry to Result",
+      "bound_state_machine_action": "ui_show_screen_result() sets lblOutcome text (WIN/LOSE/DRAW) and color (green/red/white) from outcome_t on entry to Result",
+      "ui_adapter_function": "ui_show_screen_result",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
         "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"]
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
       }
     },
     {
@@ -262,15 +378,12 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_play_again_button_clicked() -> post_event(EV_PLAY_AGAIN)",
-      "transitions_driven": [
-        "Result --> Gameplay (when game_mode == MODE_MULTI_PLAYER)",
-        "Result --> SinglePlayerFallback (when game_mode == MODE_SINGLE_PLAYER)"
-      ],
+      "transitions_driven": ["Result --> Gameplay"],
       "enable_disable_visibility_rules": {
         "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"],
         "enabled_in_states": ["Result"],
-        "disabled_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Disconnected", "Error", "Halted"]
+        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
       }
     },
     {
@@ -279,10 +392,11 @@
       "lvgl_object_type": "lv_label",
       "event": null,
       "bound_state_machine_action": "ui_show_screen_error() sets static text 'Error' on entry to Error / Halted / Disconnected",
+      "ui_adapter_function": "ui_show_screen_error",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
         "visible_in_states": ["Error", "Halted", "Disconnected"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result"]
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result"]
       }
     },
     {
@@ -290,11 +404,12 @@
       "screen": "SCR_Error",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_show_screen_error() sets dynamic error message on entry to Error / Halted / Disconnected",
+      "bound_state_machine_action": "ui_show_screen_error() sets dynamic error message text on entry to Error / Halted / Disconnected",
+      "ui_adapter_function": "ui_show_screen_error",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
         "visible_in_states": ["Error", "Halted", "Disconnected"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result"]
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result"]
       }
     },
     {
@@ -303,15 +418,112 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_retry_button_clicked() -> post_event(EV_RETRY)",
-      "transitions_driven": [
-        "Error --> Start",
-        "Disconnected --> Start"
-      ],
+      "transitions_driven": ["Error --> Start", "Disconnected --> Start"],
       "enable_disable_visibility_rules": {
         "visible_in_states": ["Error", "Disconnected"],
-        "hidden_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Halted"],
+        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Halted"],
         "enabled_in_states": ["Error", "Disconnected"],
-        "disabled_in_states": ["Boot", "Start", "PeerSearch", "RoleNegotiating", "Connecting", "Gameplay", "SinglePlayerFallback", "Evaluating", "Result", "Halted"]
+        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Halted"]
+      }
+    },
+    {
+      "control_id": "serial_HOST",
+      "screen": null,
+      "input_type": "serial_command",
+      "event": null,
+      "bound_state_machine_action": "serial_command_dispatch() parses 'HOST' and posts EV_HOST_GAME",
+      "transitions_driven": ["Start --> HostWait"],
+      "enable_disable_visibility_rules": {
+        "accepted_in_states": ["Start"]
+      }
+    },
+    {
+      "control_id": "serial_SOLO",
+      "screen": null,
+      "input_type": "serial_command",
+      "event": null,
+      "bound_state_machine_action": "serial_command_dispatch() parses 'SOLO' and posts EV_SOLO",
+      "transitions_driven": ["Start --> Gameplay", "HostTimeoutDialog --> Gameplay"],
+      "enable_disable_visibility_rules": {
+        "accepted_in_states": ["Start", "HostTimeoutDialog"]
+      }
+    },
+    {
+      "control_id": "serial_ROCK",
+      "screen": null,
+      "input_type": "serial_command",
+      "event": null,
+      "bound_state_machine_action": "serial_command_dispatch() parses 'ROCK' and posts EV_MOVE_ROCK",
+      "transitions_driven": [
+        "Gameplay --> Evaluating (single-player)",
+        "Gameplay --> Evaluating (multi-player, peer_move_received)",
+        "Gameplay --> Gameplay (multi-player, !peer_move_received)"
+      ],
+      "enable_disable_visibility_rules": {
+        "accepted_in_states": ["Gameplay"]
+      }
+    },
+    {
+      "control_id": "serial_PAPER",
+      "screen": null,
+      "input_type": "serial_command",
+      "event": null,
+      "bound_state_machine_action": "serial_command_dispatch() parses 'PAPER' and posts EV_MOVE_PAPER",
+      "transitions_driven": [
+        "Gameplay --> Evaluating (single-player)",
+        "Gameplay --> Evaluating (multi-player, peer_move_received)",
+        "Gameplay --> Gameplay (multi-player, !peer_move_received)"
+      ],
+      "enable_disable_visibility_rules": {
+        "accepted_in_states": ["Gameplay"]
+      }
+    },
+    {
+      "control_id": "serial_SCISSORS",
+      "screen": null,
+      "input_type": "serial_command",
+      "event": null,
+      "bound_state_machine_action": "serial_command_dispatch() parses 'SCISSORS' and posts EV_MOVE_SCISSORS",
+      "transitions_driven": [
+        "Gameplay --> Evaluating (single-player)",
+        "Gameplay --> Evaluating (multi-player, peer_move_received)",
+        "Gameplay --> Gameplay (multi-player, !peer_move_received)"
+      ],
+      "enable_disable_visibility_rules": {
+        "accepted_in_states": ["Gameplay"]
+      }
+    },
+    {
+      "control_id": "serial_AGAIN",
+      "screen": null,
+      "input_type": "serial_command",
+      "event": null,
+      "bound_state_machine_action": "serial_command_dispatch() parses 'AGAIN' and posts EV_PLAY_AGAIN",
+      "transitions_driven": ["Result --> Gameplay"],
+      "enable_disable_visibility_rules": {
+        "accepted_in_states": ["Result"]
+      }
+    },
+    {
+      "control_id": "serial_RESET",
+      "screen": null,
+      "input_type": "serial_command",
+      "event": null,
+      "bound_state_machine_action": "serial_command_dispatch() parses 'RESET' or 'HOME' and posts EV_RESET",
+      "transitions_driven": ["Any --> Halted"],
+      "enable_disable_visibility_rules": {
+        "accepted_in_states": ["Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+      }
+    },
+    {
+      "control_id": "serial_HOME",
+      "screen": null,
+      "input_type": "serial_command",
+      "event": null,
+      "bound_state_machine_action": "serial_command_dispatch() parses 'RESET' or 'HOME' and posts EV_RESET",
+      "transitions_driven": ["Any --> Halted"],
+      "enable_disable_visibility_rules": {
+        "accepted_in_states": ["Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
       }
     }
   ]

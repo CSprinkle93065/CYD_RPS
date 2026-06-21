@@ -14,8 +14,8 @@ class XPT2046_Touchscreen;
 /**
  * @brief Map raw XPT2046 ADC values to screen pixels.
  *
- * @param raw_x      Raw X ADC value (0–4095).
- * @param raw_y      Raw Y ADC value (0–4095).
+ * @param raw_x      Raw X ADC value (0-4095).
+ * @param raw_y      Raw Y ADC value (0-4095).
  * @param screen_x   Output screen X coordinate, clamped to [0, DISP_WIDTH-1].
  * @param screen_y   Output screen Y coordinate, clamped to [0, DISP_HEIGHT-1].
  */

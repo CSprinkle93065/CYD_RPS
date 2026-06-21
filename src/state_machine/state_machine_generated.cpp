@@ -19,22 +19,13 @@ void StateMachine::dispatch(Event event, Context& ctx) {
             state_ = State::Halted;
         }
         break;
-    case State::Connecting:
-        if (event == Event::EV_CONNECTED) {
-            on_peer_connected();
-            state_ = State::Gameplay;
-        } else if (event == Event::EV_DISCONNECTED) {
-            on_peer_disconnected();
-            state_ = State::Disconnected;
-        } else if (event == Event::EV_ERROR) {
-            app_on_error();
-            state_ = State::Error;
-        }
-        break;
     case State::Disconnected:
         if (event == Event::EV_RETRY) {
             reset_and_return_start();
             state_ = State::Start;
+        } else if (event == Event::EV_RESET) {
+            esp_restart();
+            state_ = State::Halted;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
@@ -44,6 +35,9 @@ void StateMachine::dispatch(Event event, Context& ctx) {
         if (event == Event::EV_RETRY) {
             reset_and_return_start();
             state_ = State::Start;
+        } else if (event == Event::EV_RESET) {
+            esp_restart();
+            state_ = State::Halted;
         } else if (event == Event::EV_ERROR && guard_fatal(ctx)) {
             app_on_error_fatal();
             state_ = State::Halted;
@@ -53,28 +47,40 @@ void StateMachine::dispatch(Event event, Context& ctx) {
         if (event == Event::EV_EVALUATE) {
             evaluate_and_show_result();
             state_ = State::Result;
+        } else if (event == Event::EV_RESET) {
+            esp_restart();
+            state_ = State::Halted;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
         }
         break;
     case State::Gameplay:
-        if (event == Event::EV_MOVE_ROCK && guard_peer_move_received(ctx)) {
+        if (event == Event::EV_MOVE_ROCK && guard_mode_single(ctx)) {
+            on_singleplayer_move_rock();
+            state_ = State::Evaluating;
+        } else if (event == Event::EV_MOVE_PAPER && guard_mode_single(ctx)) {
+            on_singleplayer_move_paper();
+            state_ = State::Evaluating;
+        } else if (event == Event::EV_MOVE_SCISSORS && guard_mode_single(ctx)) {
+            on_singleplayer_move_scissors();
+            state_ = State::Evaluating;
+        } else if (event == Event::EV_MOVE_ROCK && guard_mode_multi_and_peer_move_received(ctx)) {
             on_local_move_rock_complete();
             state_ = State::Evaluating;
-        } else if (event == Event::EV_MOVE_PAPER && guard_peer_move_received(ctx)) {
+        } else if (event == Event::EV_MOVE_PAPER && guard_mode_multi_and_peer_move_received(ctx)) {
             on_local_move_paper_complete();
             state_ = State::Evaluating;
-        } else if (event == Event::EV_MOVE_SCISSORS && guard_peer_move_received(ctx)) {
+        } else if (event == Event::EV_MOVE_SCISSORS && guard_mode_multi_and_peer_move_received(ctx)) {
             on_local_move_scissors_complete();
             state_ = State::Evaluating;
-        } else if (event == Event::EV_MOVE_ROCK && guard_not_peer_move_received(ctx)) {
+        } else if (event == Event::EV_MOVE_ROCK && guard_mode_multi_and_not_peer_move_received(ctx)) {
             on_local_move_rock_pending();
             state_ = State::Gameplay;
-        } else if (event == Event::EV_MOVE_PAPER && guard_not_peer_move_received(ctx)) {
+        } else if (event == Event::EV_MOVE_PAPER && guard_mode_multi_and_not_peer_move_received(ctx)) {
             on_local_move_paper_pending();
             state_ = State::Gameplay;
-        } else if (event == Event::EV_MOVE_SCISSORS && guard_not_peer_move_received(ctx)) {
+        } else if (event == Event::EV_MOVE_SCISSORS && guard_mode_multi_and_not_peer_move_received(ctx)) {
             on_local_move_scissors_pending();
             state_ = State::Gameplay;
         } else if (event == Event::EV_PEER_MOVE_RECEIVED && guard_local_move_chosen(ctx)) {
@@ -86,6 +92,9 @@ void StateMachine::dispatch(Event event, Context& ctx) {
         } else if (event == Event::EV_DISCONNECTED) {
             on_peer_disconnected();
             state_ = State::Disconnected;
+        } else if (event == Event::EV_RESET) {
+            esp_restart();
+            state_ = State::Halted;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
@@ -93,70 +102,88 @@ void StateMachine::dispatch(Event event, Context& ctx) {
         break;
     case State::Halted:
         break;
-    case State::PeerSearch:
-        if (event == Event::EV_PEER_FOUND) {
-            on_peer_found();
-            state_ = State::RoleNegotiating;
-        } else if (event == Event::EV_PEER_TIMEOUT) {
-            on_discovery_timeout();
-            state_ = State::SinglePlayerFallback;
-        } else if (event == Event::EV_CANCEL) {
-            on_cancel_button();
+    case State::HostTimeoutDialog:
+        if (event == Event::EV_HOST_RETRY) {
+            on_host_retry();
+            state_ = State::HostWait;
+        } else if (event == Event::EV_SOLO) {
+            on_host_solo();
+            state_ = State::Gameplay;
+        } else if (event == Event::EV_CANCEL_HOST) {
+            on_cancel_host();
             state_ = State::Start;
+        } else if (event == Event::EV_RESET) {
+            esp_restart();
+            state_ = State::Halted;
+        }
+        break;
+    case State::HostWait:
+        if (event == Event::EV_HOST_TIMEOUT) {
+            on_host_timeout();
+            state_ = State::HostTimeoutDialog;
+        } else if (event == Event::EV_HOST_FOUND && guard_peer_host_seen(ctx)) {
+            on_conflict_become_join();
+            state_ = State::Joining;
+        } else if (event == Event::EV_CONNECTED) {
+            on_peer_connected();
+            state_ = State::Gameplay;
+        } else if (event == Event::EV_CANCEL_HOST) {
+            on_cancel_host();
+            state_ = State::Start;
+        } else if (event == Event::EV_RESET) {
+            esp_restart();
+            state_ = State::Halted;
+        } else if (event == Event::EV_ERROR) {
+            app_on_error();
+            state_ = State::Error;
+        }
+        break;
+    case State::Joining:
+        if (event == Event::EV_CONNECTED) {
+            on_peer_connected();
+            state_ = State::Gameplay;
+        } else if (event == Event::EV_CONNECT_FAILED && guard_retries_exhausted(ctx)) {
+            on_join_failed();
+            state_ = State::Start;
+        } else if (event == Event::EV_RESET) {
+            esp_restart();
+            state_ = State::Halted;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
         }
         break;
     case State::Result:
-        if (event == Event::EV_PLAY_AGAIN && guard_game_mode_eq_MODE_MULTI_PLAYER(ctx)) {
+        if (event == Event::EV_PLAY_AGAIN) {
             start_new_round();
             state_ = State::Gameplay;
-        } else if (event == Event::EV_PLAY_AGAIN && guard_game_mode_eq_MODE_SINGLE_PLAYER(ctx)) {
-            start_new_round();
-            state_ = State::SinglePlayerFallback;
         } else if (event == Event::EV_DISCONNECTED) {
             on_peer_disconnected();
             state_ = State::Disconnected;
-        } else if (event == Event::EV_ERROR) {
-            app_on_error();
-            state_ = State::Error;
-        }
-        break;
-    case State::RoleNegotiating:
-        if (event == Event::EV_ROLE_RESOLVED && guard_role_host(ctx)) {
-            start_advertising_host();
-            state_ = State::Connecting;
-        } else if (event == Event::EV_ROLE_RESOLVED && guard_role_join(ctx)) {
-            start_scanning_join();
-            state_ = State::Connecting;
-        } else if (event == Event::EV_ERROR) {
-            app_on_error();
-            state_ = State::Error;
-        }
-        break;
-    case State::SinglePlayerFallback:
-        if (event == Event::EV_MOVE_ROCK) {
-            on_singleplayer_move_rock();
-            state_ = State::Evaluating;
-        } else if (event == Event::EV_MOVE_PAPER) {
-            on_singleplayer_move_paper();
-            state_ = State::Evaluating;
-        } else if (event == Event::EV_MOVE_SCISSORS) {
-            on_singleplayer_move_scissors();
-            state_ = State::Evaluating;
+        } else if (event == Event::EV_RESET) {
+            esp_restart();
+            state_ = State::Halted;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
         }
         break;
     case State::Start:
-        if (event == Event::EV_PLAY) {
-            on_play_button();
-            state_ = State::PeerSearch;
+        if (event == Event::EV_HOST_GAME) {
+            on_host_game();
+            state_ = State::HostWait;
+        } else if (event == Event::EV_HOST_FOUND && guard_host_mac_valid(ctx)) {
+            on_conflict_become_join();
+            state_ = State::Joining;
+        } else if (event == Event::EV_SOLO) {
+            on_solo();
+            state_ = State::Gameplay;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
+        } else if (event == Event::EV_RESET) {
+            esp_restart();
+            state_ = State::Halted;
         }
         break;
     default:

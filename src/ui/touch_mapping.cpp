@@ -1,10 +1,10 @@
 /**
  * @file touch_mapping.cpp
- * @brief XPT2046 raw ADC to screen-pixel mapping for CYD_RPS.
+ * @brief XPT2046 raw ADC to screen-pixel mapping for CYD_RPS v0.2.0.
  *
- * Implements LL-035: raw ADC (0–4095) is mapped to screen pixels (0–239 ×
- * 0–319 in portrait) and clamped to display bounds. All touch events are
- * logged to serial for debugging.
+ * Implements docs/definition.md Section 5 (Touch Mapping Layer): raw ADC
+ * (0-4095) is mapped to screen pixels (0-239 x 0-319 in portrait) and clamped
+ * to display bounds. All touch events are logged to serial for QA.
  */
 
 #include "touch_mapping.h"

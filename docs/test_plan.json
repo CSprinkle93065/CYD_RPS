@@ -1,12 +1,17 @@
 {
   "project": "CYD_RPS",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "workflow_id": "wvc_20260617_171607",
+  "revision_type": "minor_revision",
+  "target_environment": "hardware",
+  "simulator": "wokwi",
+  "generated_at": "2026-06-21T15:10:02+08:00",
   "tests": [
     {
       "id": "H00",
       "title": "Initial pseudo-state lands in Boot",
       "starting_state": "[*]",
-      "action": "Construct a fresh app::StateMachine instance",
+      "action": "Construct a fresh app::StateMachine v0.2.0 instance",
       "expected_result": "current() == State::Boot; no action invoked",
       "automation_method": "host_assert",
       "hardware_required": false,
@@ -25,7 +30,7 @@
       "title": "Boot -> Start on EV_BOOT_DONE [init_ok]",
       "starting_state": "Boot",
       "action": "Dispatch EV_BOOT_DONE with guard_init_ok returning true",
-      "expected_result": "current() == State::Start and app_init_success() was invoked",
+      "expected_result": "current() == State::Start and app_init_success() was invoked; session score reset to 0/0/0",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
@@ -78,23 +83,60 @@
     },
     {
       "id": "H04",
-      "title": "Start -> PeerSearch on EV_PLAY",
+      "title": "Start -> HostWait on EV_HOST_GAME",
       "starting_state": "Start",
-      "action": "Dispatch EV_PLAY",
-      "expected_result": "current() == State::PeerSearch and on_play_button() was invoked",
+      "action": "Dispatch EV_HOST_GAME",
+      "expected_result": "current() == State::HostWait and on_host_game() was invoked; mode set to multiplayer",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
         "start",
-        "peer_search"
+        "host_wait",
+        "multi_player"
       ],
       "prerequisite": null,
       "reset_action": "Reach Start by dispatching EV_BOOT_DONE [init_ok] from Boot"
     },
     {
       "id": "H05",
+      "title": "Start -> Joining on EV_HOST_FOUND [host_mac_valid]",
+      "starting_state": "Start",
+      "action": "Dispatch EV_HOST_FOUND with guard_host_mac_valid returning true",
+      "expected_result": "current() == State::Joining and on_conflict_become_join() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "start",
+        "joining",
+        "peer_discovery"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Start by dispatching EV_BOOT_DONE [init_ok] from Boot"
+    },
+    {
+      "id": "H06",
+      "title": "Start -> Gameplay on EV_SOLO",
+      "starting_state": "Start",
+      "action": "Dispatch EV_SOLO",
+      "expected_result": "current() == State::Gameplay and on_solo() was invoked; mode set to single-player",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "start",
+        "gameplay",
+        "single_player"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Start by dispatching EV_BOOT_DONE [init_ok] from Boot"
+    },
+    {
+      "id": "H07",
       "title": "Start -> Error on EV_ERROR",
       "starting_state": "Start",
       "action": "Dispatch EV_ERROR",
@@ -111,166 +153,117 @@
       "reset_action": "Reach Start by dispatching EV_BOOT_DONE [init_ok] from Boot"
     },
     {
-      "id": "H06",
-      "title": "PeerSearch -> RoleNegotiating on EV_PEER_FOUND",
-      "starting_state": "PeerSearch",
-      "action": "Dispatch EV_PEER_FOUND",
-      "expected_result": "current() == State::RoleNegotiating and on_peer_found() was invoked",
-      "automation_method": "host_assert",
-      "hardware_required": false,
-      "environment": "host",
-      "serial_expect": null,
-      "tags": [
-        "peer_search",
-        "role_negotiation"
-      ],
-      "prerequisite": null,
-      "reset_action": "Reach PeerSearch by dispatching EV_PLAY from Start"
-    },
-    {
-      "id": "H07",
-      "title": "PeerSearch -> SinglePlayerFallback on EV_PEER_TIMEOUT",
-      "starting_state": "PeerSearch",
-      "action": "Dispatch EV_PEER_TIMEOUT",
-      "expected_result": "current() == State::SinglePlayerFallback and on_discovery_timeout() was invoked",
-      "automation_method": "host_assert",
-      "hardware_required": false,
-      "environment": "host",
-      "serial_expect": null,
-      "tags": [
-        "peer_search",
-        "peer_timeout",
-        "single_player"
-      ],
-      "prerequisite": null,
-      "reset_action": "Reach PeerSearch by dispatching EV_PLAY from Start"
-    },
-    {
       "id": "H08",
-      "title": "PeerSearch -> Start on EV_CANCEL",
-      "starting_state": "PeerSearch",
-      "action": "Dispatch EV_CANCEL",
-      "expected_result": "current() == State::Start and on_cancel_button() was invoked",
+      "title": "Start -> Halted on EV_RESET",
+      "starting_state": "Start",
+      "action": "Dispatch EV_RESET",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
-        "peer_search",
-        "cancel"
+        "start",
+        "reset",
+        "halted"
       ],
       "prerequisite": null,
-      "reset_action": "Reach PeerSearch by dispatching EV_PLAY from Start"
+      "reset_action": "Reach Start by dispatching EV_BOOT_DONE [init_ok] from Boot"
     },
     {
       "id": "H09",
-      "title": "PeerSearch -> Error on EV_ERROR",
-      "starting_state": "PeerSearch",
-      "action": "Dispatch EV_ERROR",
-      "expected_result": "current() == State::Error and app_on_error() was invoked",
+      "title": "HostWait -> HostTimeoutDialog on EV_HOST_TIMEOUT",
+      "starting_state": "HostWait",
+      "action": "Dispatch EV_HOST_TIMEOUT",
+      "expected_result": "current() == State::HostTimeoutDialog and on_host_timeout() was invoked",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
-        "peer_search",
-        "error"
+        "host_wait",
+        "host_timeout_dialog",
+        "timeout"
       ],
       "prerequisite": null,
-      "reset_action": "Reach PeerSearch by dispatching EV_PLAY from Start"
+      "reset_action": "Reach HostWait by dispatching EV_HOST_GAME from Start"
     },
     {
       "id": "H10",
-      "title": "RoleNegotiating -> Connecting on EV_ROLE_RESOLVED [role_host]",
-      "starting_state": "RoleNegotiating",
-      "action": "Dispatch EV_ROLE_RESOLVED with guard_role_host returning true",
-      "expected_result": "current() == State::Connecting and start_advertising_host() was invoked",
+      "title": "HostWait -> Joining on EV_HOST_FOUND [peer_host_seen]",
+      "starting_state": "HostWait",
+      "action": "Dispatch EV_HOST_FOUND with guard_peer_host_seen returning true",
+      "expected_result": "current() == State::Joining and on_conflict_become_join() was invoked",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
-        "role_negotiation",
-        "host",
-        "connecting"
+        "host_wait",
+        "joining",
+        "conflict_resolution"
       ],
       "prerequisite": null,
-      "reset_action": "Reach RoleNegotiating by dispatching EV_PEER_FOUND from PeerSearch"
+      "reset_action": "Reach HostWait by dispatching EV_HOST_GAME from Start"
     },
     {
       "id": "H11",
-      "title": "RoleNegotiating -> Connecting on EV_ROLE_RESOLVED [role_join]",
-      "starting_state": "RoleNegotiating",
-      "action": "Dispatch EV_ROLE_RESOLVED with guard_role_join returning true",
-      "expected_result": "current() == State::Connecting and start_scanning_join() was invoked",
-      "automation_method": "host_assert",
-      "hardware_required": false,
-      "environment": "host",
-      "serial_expect": null,
-      "tags": [
-        "role_negotiation",
-        "join",
-        "connecting"
-      ],
-      "prerequisite": null,
-      "reset_action": "Reach RoleNegotiating by dispatching EV_PEER_FOUND from PeerSearch"
-    },
-    {
-      "id": "H12",
-      "title": "RoleNegotiating -> Error on EV_ERROR",
-      "starting_state": "RoleNegotiating",
-      "action": "Dispatch EV_ERROR",
-      "expected_result": "current() == State::Error and app_on_error() was invoked",
-      "automation_method": "host_assert",
-      "hardware_required": false,
-      "environment": "host",
-      "serial_expect": null,
-      "tags": [
-        "role_negotiation",
-        "error"
-      ],
-      "prerequisite": null,
-      "reset_action": "Reach RoleNegotiating by dispatching EV_PEER_FOUND from PeerSearch"
-    },
-    {
-      "id": "H13",
-      "title": "Connecting -> Gameplay on EV_CONNECTED",
-      "starting_state": "Connecting",
+      "title": "HostWait -> Gameplay on EV_CONNECTED",
+      "starting_state": "HostWait",
       "action": "Dispatch EV_CONNECTED",
-      "expected_result": "current() == State::Gameplay and on_peer_connected() was invoked",
+      "expected_result": "current() == State::Gameplay and on_peer_connected() was invoked; mode set to multiplayer",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
-        "connecting",
+        "host_wait",
         "gameplay",
         "multi_player"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Connecting by dispatching EV_ROLE_RESOLVED [role_host|role_join] from RoleNegotiating"
+      "reset_action": "Reach HostWait by dispatching EV_HOST_GAME from Start"
     },
     {
-      "id": "H14",
-      "title": "Connecting -> Disconnected on EV_DISCONNECTED",
-      "starting_state": "Connecting",
-      "action": "Dispatch EV_DISCONNECTED",
-      "expected_result": "current() == State::Disconnected and on_peer_disconnected() was invoked",
+      "id": "H12",
+      "title": "HostWait -> Start on EV_CANCEL_HOST",
+      "starting_state": "HostWait",
+      "action": "Dispatch EV_CANCEL_HOST",
+      "expected_result": "current() == State::Start and on_cancel_host() was invoked; beacon/scan restarted",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
-        "connecting",
-        "disconnected"
+        "host_wait",
+        "cancel",
+        "start"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Connecting by dispatching EV_ROLE_RESOLVED [role_host|role_join] from RoleNegotiating"
+      "reset_action": "Reach HostWait by dispatching EV_HOST_GAME from Start"
     },
     {
-      "id": "H15",
-      "title": "Connecting -> Error on EV_ERROR",
-      "starting_state": "Connecting",
+      "id": "H13",
+      "title": "HostWait -> Halted on EV_RESET",
+      "starting_state": "HostWait",
+      "action": "Dispatch EV_RESET",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "host_wait",
+        "reset",
+        "halted"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach HostWait by dispatching EV_HOST_GAME from Start"
+    },
+    {
+      "id": "H14",
+      "title": "HostWait -> Error on EV_ERROR",
+      "starting_state": "HostWait",
       "action": "Dispatch EV_ERROR",
       "expected_result": "current() == State::Error and app_on_error() was invoked",
       "automation_method": "host_assert",
@@ -278,150 +271,674 @@
       "environment": "host",
       "serial_expect": null,
       "tags": [
-        "connecting",
+        "host_wait",
         "error"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Connecting by dispatching EV_ROLE_RESOLVED [role_host|role_join] from RoleNegotiating"
+      "reset_action": "Reach HostWait by dispatching EV_HOST_GAME from Start"
     },
     {
-      "id": "H16-ROCK",
-      "title": "Gameplay -> Evaluating on EV_MOVE_ROCK [peer_move_received]",
-      "starting_state": "Gameplay",
-      "action": "Dispatch EV_MOVE_ROCK with guard_peer_move_received returning true",
-      "expected_result": "current() == State::Evaluating and on_local_move_rock_complete() was invoked",
+      "id": "H15",
+      "title": "HostTimeoutDialog -> HostWait on EV_HOST_RETRY",
+      "starting_state": "HostTimeoutDialog",
+      "action": "Dispatch EV_HOST_RETRY",
+      "expected_result": "current() == State::HostWait and on_host_retry() was invoked; timeout restarted",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
-        "gameplay",
-        "move_selection",
-        "rock",
-        "evaluating"
+        "host_timeout_dialog",
+        "host_wait",
+        "retry"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from Connecting"
+      "reset_action": "Reach HostTimeoutDialog by dispatching EV_HOST_TIMEOUT from HostWait"
     },
     {
-      "id": "H19-ROCK",
-      "title": "Gameplay -> Gameplay on EV_MOVE_ROCK [!peer_move_received]",
-      "starting_state": "Gameplay",
-      "action": "Dispatch EV_MOVE_ROCK with guard_peer_move_received returning false",
-      "expected_result": "current() == State::Gameplay and on_local_move_rock_pending() was invoked",
+      "id": "H16",
+      "title": "HostTimeoutDialog -> Gameplay on EV_SOLO",
+      "starting_state": "HostTimeoutDialog",
+      "action": "Dispatch EV_SOLO",
+      "expected_result": "current() == State::Gameplay and on_host_solo() was invoked; mode set to single-player",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
+        "host_timeout_dialog",
         "gameplay",
-        "move_selection",
-        "rock",
-        "pending"
+        "single_player"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from Connecting"
+      "reset_action": "Reach HostTimeoutDialog by dispatching EV_HOST_TIMEOUT from HostWait"
     },
     {
-      "id": "H16-PAPER",
-      "title": "Gameplay -> Evaluating on EV_MOVE_PAPER [peer_move_received]",
-      "starting_state": "Gameplay",
-      "action": "Dispatch EV_MOVE_PAPER with guard_peer_move_received returning true",
-      "expected_result": "current() == State::Evaluating and on_local_move_paper_complete() was invoked",
+      "id": "H17",
+      "title": "HostTimeoutDialog -> Start on EV_CANCEL_HOST",
+      "starting_state": "HostTimeoutDialog",
+      "action": "Dispatch EV_CANCEL_HOST",
+      "expected_result": "current() == State::Start and on_cancel_host() was invoked; beacon/scan restarted",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
-        "gameplay",
-        "move_selection",
-        "paper",
-        "evaluating"
+        "host_timeout_dialog",
+        "cancel",
+        "start"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from Connecting"
+      "reset_action": "Reach HostTimeoutDialog by dispatching EV_HOST_TIMEOUT from HostWait"
     },
     {
-      "id": "H19-PAPER",
-      "title": "Gameplay -> Gameplay on EV_MOVE_PAPER [!peer_move_received]",
-      "starting_state": "Gameplay",
-      "action": "Dispatch EV_MOVE_PAPER with guard_peer_move_received returning false",
-      "expected_result": "current() == State::Gameplay and on_local_move_paper_pending() was invoked",
+      "id": "H18",
+      "title": "HostTimeoutDialog -> Halted on EV_RESET",
+      "starting_state": "HostTimeoutDialog",
+      "action": "Dispatch EV_RESET",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
-        "gameplay",
-        "move_selection",
-        "paper",
-        "pending"
+        "host_timeout_dialog",
+        "reset",
+        "halted"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from Connecting"
+      "reset_action": "Reach HostTimeoutDialog by dispatching EV_HOST_TIMEOUT from HostWait"
     },
     {
-      "id": "H16-SCISSORS",
-      "title": "Gameplay -> Evaluating on EV_MOVE_SCISSORS [peer_move_received]",
-      "starting_state": "Gameplay",
-      "action": "Dispatch EV_MOVE_SCISSORS with guard_peer_move_received returning true",
-      "expected_result": "current() == State::Evaluating and on_local_move_scissors_complete() was invoked",
+      "id": "H19",
+      "title": "Joining -> Gameplay on EV_CONNECTED",
+      "starting_state": "Joining",
+      "action": "Dispatch EV_CONNECTED",
+      "expected_result": "current() == State::Gameplay and on_peer_connected() was invoked; mode set to multiplayer",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
+        "joining",
         "gameplay",
-        "move_selection",
-        "scissors",
-        "evaluating"
+        "multi_player"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from Connecting"
+      "reset_action": "Reach Joining by dispatching EV_HOST_FOUND [host_mac_valid] from Start or HostWait"
     },
     {
-      "id": "H19-SCISSORS",
-      "title": "Gameplay -> Gameplay on EV_MOVE_SCISSORS [!peer_move_received]",
-      "starting_state": "Gameplay",
-      "action": "Dispatch EV_MOVE_SCISSORS with guard_peer_move_received returning false",
-      "expected_result": "current() == State::Gameplay and on_local_move_scissors_pending() was invoked",
+      "id": "H20",
+      "title": "Joining -> Start on EV_CONNECT_FAILED [retries_exhausted]",
+      "starting_state": "Joining",
+      "action": "Dispatch EV_CONNECT_FAILED with guard_retries_exhausted returning true",
+      "expected_result": "current() == State::Start and on_join_failed() was invoked; beacon/scan restarted",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
-        "gameplay",
-        "move_selection",
-        "scissors",
-        "pending"
+        "joining",
+        "start",
+        "connect_failed"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from Connecting"
+      "reset_action": "Reach Joining by dispatching EV_HOST_FOUND [host_mac_valid] from Start"
+    },
+    {
+      "id": "H21",
+      "title": "Joining -> Halted on EV_RESET",
+      "starting_state": "Joining",
+      "action": "Dispatch EV_RESET",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "joining",
+        "reset",
+        "halted"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Joining by dispatching EV_HOST_FOUND [host_mac_valid] from Start"
     },
     {
       "id": "H22",
-      "title": "Gameplay -> Evaluating on EV_PEER_MOVE_RECEIVED [local_move_chosen]",
+      "title": "Joining -> Error on EV_ERROR",
+      "starting_state": "Joining",
+      "action": "Dispatch EV_ERROR",
+      "expected_result": "current() == State::Error and app_on_error() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "joining",
+        "error"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Joining by dispatching EV_HOST_FOUND [host_mac_valid] from Start"
+    },
+    {
+      "id": "H23-ROCK",
+      "title": "Gameplay -> Evaluating on EV_MOVE_ROCK [mode_single]",
       "starting_state": "Gameplay",
-      "action": "Dispatch EV_PEER_MOVE_RECEIVED with guard_local_move_chosen returning true",
-      "expected_result": "current() == State::Evaluating and on_peer_move_complete() was invoked",
+      "action": "Dispatch EV_MOVE_ROCK with guard_mode_single returning true",
+      "expected_result": "current() == State::Evaluating and on_singleplayer_move_rock() was invoked; local move set to Rock",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
         "gameplay",
-        "peer_move",
+        "evaluating",
+        "single_player",
+        "rock"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_SOLO from Start"
+    },
+    {
+      "id": "H24-ROCK",
+      "title": "Gameplay -> Evaluating on EV_MOVE_ROCK [mode_multi && peer_move_received]",
+      "starting_state": "Gameplay",
+      "action": "Dispatch EV_MOVE_ROCK with guard_mode_multi and guard_peer_move_received returning true",
+      "expected_result": "current() == State::Evaluating and on_local_move_rock_complete() was invoked; local move set to Rock",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "gameplay",
+        "evaluating",
+        "multi_player",
+        "rock"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from HostWait or Joining with mode_multi=true and peer_move_received=true"
+    },
+    {
+      "id": "H25-ROCK",
+      "title": "Gameplay -> Gameplay on EV_MOVE_ROCK [mode_multi && !peer_move_received]",
+      "starting_state": "Gameplay",
+      "action": "Dispatch EV_MOVE_ROCK with guard_mode_multi and guard_not_peer_move_received returning true",
+      "expected_result": "current() == State::Gameplay and on_local_move_rock_pending() was invoked; local move set to Rock",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "gameplay",
+        "pending",
+        "multi_player",
+        "rock"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from HostWait or Joining with mode_multi=true and peer_move_received=false"
+    },
+    {
+      "id": "H23-PAPER",
+      "title": "Gameplay -> Evaluating on EV_MOVE_PAPER [mode_single]",
+      "starting_state": "Gameplay",
+      "action": "Dispatch EV_MOVE_PAPER with guard_mode_single returning true",
+      "expected_result": "current() == State::Evaluating and on_singleplayer_move_paper() was invoked; local move set to Paper",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "gameplay",
+        "evaluating",
+        "single_player",
+        "paper"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_SOLO from Start"
+    },
+    {
+      "id": "H24-PAPER",
+      "title": "Gameplay -> Evaluating on EV_MOVE_PAPER [mode_multi && peer_move_received]",
+      "starting_state": "Gameplay",
+      "action": "Dispatch EV_MOVE_PAPER with guard_mode_multi and guard_peer_move_received returning true",
+      "expected_result": "current() == State::Evaluating and on_local_move_paper_complete() was invoked; local move set to Paper",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "gameplay",
+        "evaluating",
+        "multi_player",
+        "paper"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from HostWait or Joining with mode_multi=true and peer_move_received=true"
+    },
+    {
+      "id": "H25-PAPER",
+      "title": "Gameplay -> Gameplay on EV_MOVE_PAPER [mode_multi && !peer_move_received]",
+      "starting_state": "Gameplay",
+      "action": "Dispatch EV_MOVE_PAPER with guard_mode_multi and guard_not_peer_move_received returning true",
+      "expected_result": "current() == State::Gameplay and on_local_move_paper_pending() was invoked; local move set to Paper",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "gameplay",
+        "pending",
+        "multi_player",
+        "paper"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from HostWait or Joining with mode_multi=true and peer_move_received=false"
+    },
+    {
+      "id": "H23-SCISSORS",
+      "title": "Gameplay -> Evaluating on EV_MOVE_SCISSORS [mode_single]",
+      "starting_state": "Gameplay",
+      "action": "Dispatch EV_MOVE_SCISSORS with guard_mode_single returning true",
+      "expected_result": "current() == State::Evaluating and on_singleplayer_move_scissors() was invoked; local move set to Scissors",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "gameplay",
+        "evaluating",
+        "single_player",
+        "scissors"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_SOLO from Start"
+    },
+    {
+      "id": "H24-SCISSORS",
+      "title": "Gameplay -> Evaluating on EV_MOVE_SCISSORS [mode_multi && peer_move_received]",
+      "starting_state": "Gameplay",
+      "action": "Dispatch EV_MOVE_SCISSORS with guard_mode_multi and guard_peer_move_received returning true",
+      "expected_result": "current() == State::Evaluating and on_local_move_scissors_complete() was invoked; local move set to Scissors",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "gameplay",
+        "evaluating",
+        "multi_player",
+        "scissors"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from HostWait or Joining with mode_multi=true and peer_move_received=true"
+    },
+    {
+      "id": "H25-SCISSORS",
+      "title": "Gameplay -> Gameplay on EV_MOVE_SCISSORS [mode_multi && !peer_move_received]",
+      "starting_state": "Gameplay",
+      "action": "Dispatch EV_MOVE_SCISSORS with guard_mode_multi and guard_not_peer_move_received returning true",
+      "expected_result": "current() == State::Gameplay and on_local_move_scissors_pending() was invoked; local move set to Scissors",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "gameplay",
+        "pending",
+        "multi_player",
+        "scissors"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from HostWait or Joining with mode_multi=true and peer_move_received=false"
+    },
+    {
+      "id": "H44-HOST",
+      "title": "Serial command parser posts EV_HOST_GAME on receiving 'HOST'",
+      "starting_state": "Start",
+      "action": "Feed the string 'HOST\\n' to serial_process_input() and call serial_command_dispatch()",
+      "expected_result": "State machine receives EV_HOST_GAME and transitions from Start to HostWait; equivalent button action invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "serial",
+        "parser",
+        "host_game"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Start via the normal state-machine reset path"
+    },
+    {
+      "id": "H44-SOLO",
+      "title": "Serial command parser posts EV_SOLO on receiving 'SOLO'",
+      "starting_state": "Start",
+      "action": "Feed the string 'SOLO\\n' to serial_process_input() and call serial_command_dispatch()",
+      "expected_result": "State machine receives EV_SOLO and transitions from Start to Gameplay; equivalent button action invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "serial",
+        "parser",
+        "solo"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Start via the normal state-machine reset path"
+    },
+    {
+      "id": "H44-ROCK",
+      "title": "Serial command parser posts EV_MOVE_ROCK on receiving 'ROCK'",
+      "starting_state": "Gameplay",
+      "action": "Feed the string 'ROCK\\n' to serial_process_input() and call serial_command_dispatch()",
+      "expected_result": "State machine receives EV_MOVE_ROCK and transitions from Gameplay to Evaluating; equivalent button action invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "serial",
+        "parser",
+        "move_rock"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay via the normal state-machine reset path"
+    },
+    {
+      "id": "H44-PAPER",
+      "title": "Serial command parser posts EV_MOVE_PAPER on receiving 'PAPER'",
+      "starting_state": "Gameplay",
+      "action": "Feed the string 'PAPER\\n' to serial_process_input() and call serial_command_dispatch()",
+      "expected_result": "State machine receives EV_MOVE_PAPER and transitions from Gameplay to Evaluating; equivalent button action invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "serial",
+        "parser",
+        "move_paper"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay via the normal state-machine reset path"
+    },
+    {
+      "id": "H44-SCISSORS",
+      "title": "Serial command parser posts EV_MOVE_SCISSORS on receiving 'SCISSORS'",
+      "starting_state": "Gameplay",
+      "action": "Feed the string 'SCISSORS\\n' to serial_process_input() and call serial_command_dispatch()",
+      "expected_result": "State machine receives EV_MOVE_SCISSORS and transitions from Gameplay to Evaluating; equivalent button action invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "serial",
+        "parser",
+        "move_scissors"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay via the normal state-machine reset path"
+    },
+    {
+      "id": "H44-AGAIN",
+      "title": "Serial command parser posts EV_PLAY_AGAIN on receiving 'AGAIN'",
+      "starting_state": "Result",
+      "action": "Feed the string 'AGAIN\\n' to serial_process_input() and call serial_command_dispatch()",
+      "expected_result": "State machine receives EV_PLAY_AGAIN and transitions from Result to Gameplay; equivalent button action invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "serial",
+        "parser",
+        "play_again"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Result via the normal state-machine reset path"
+    },
+    {
+      "id": "H44-RESET",
+      "title": "Serial command parser posts EV_RESET on receiving 'RESET'",
+      "starting_state": "Start",
+      "action": "Feed the string 'RESET\\n' to serial_process_input() and call serial_command_dispatch()",
+      "expected_result": "State machine receives EV_RESET and transitions from Start to Halted; equivalent button action invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "serial",
+        "parser",
+        "reset"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Start via the normal state-machine reset path"
+    },
+    {
+      "id": "H44-HOME",
+      "title": "Serial command parser posts EV_RESET on receiving 'HOME'",
+      "starting_state": "Start",
+      "action": "Feed the string 'HOME\\n' to serial_process_input() and call serial_command_dispatch()",
+      "expected_result": "State machine receives EV_RESET and transitions from Start to Halted; equivalent button action invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "serial",
+        "parser",
+        "home"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Start via the normal state-machine reset path"
+    },
+    {
+      "id": "H46-WIN",
+      "title": "Scoreboard wins increments after WIN outcome",
+      "starting_state": "Evaluating",
+      "action": "Dispatch EV_EVALUATE with game state producing OUTCOME_WIN",
+      "expected_result": "session_score_t.wins == 1 and ui_set_score() reflects W/L/D counters",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "scoreboard",
+        "game_logic",
+        "win"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Evaluating by dispatching a move event from Gameplay in a fresh session"
+    },
+    {
+      "id": "H46-LOSE",
+      "title": "Scoreboard losses increments after LOSE outcome",
+      "starting_state": "Evaluating",
+      "action": "Dispatch EV_EVALUATE with game state producing OUTCOME_LOSE",
+      "expected_result": "session_score_t.losses == 1 and ui_set_score() reflects W/L/D counters",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "scoreboard",
+        "game_logic",
+        "lose"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Evaluating by dispatching a move event from Gameplay in a fresh session"
+    },
+    {
+      "id": "H46-DRAW",
+      "title": "Scoreboard draws increments after DRAW outcome",
+      "starting_state": "Evaluating",
+      "action": "Dispatch EV_EVALUATE with game state producing OUTCOME_DRAW",
+      "expected_result": "session_score_t.draws == 1 and ui_set_score() reflects W/L/D counters",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "scoreboard",
+        "game_logic",
+        "draw"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Evaluating by dispatching a move event from Gameplay in a fresh session"
+    },
+    {
+      "id": "H49-Start",
+      "title": "Home icon reset from Start posts EV_RESET and halts",
+      "starting_state": "Start",
+      "action": "Invoke on_home_button_clicked()",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "home",
+        "reset",
+        "start"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Start via the normal state-machine path from Boot"
+    },
+    {
+      "id": "H49-HostWait",
+      "title": "Home icon reset from HostWait posts EV_RESET and halts",
+      "starting_state": "HostWait",
+      "action": "Invoke on_home_button_clicked()",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "home",
+        "reset",
+        "hostwait"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach HostWait via the normal state-machine path from Boot"
+    },
+    {
+      "id": "H49-HostTimeoutDialog",
+      "title": "Home icon reset from HostTimeoutDialog posts EV_RESET and halts",
+      "starting_state": "HostTimeoutDialog",
+      "action": "Invoke on_home_button_clicked()",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "home",
+        "reset",
+        "hosttimeoutdialog"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach HostTimeoutDialog via the normal state-machine path from Boot"
+    },
+    {
+      "id": "H49-Gameplay",
+      "title": "Home icon reset from Gameplay posts EV_RESET and halts",
+      "starting_state": "Gameplay",
+      "action": "Invoke on_home_button_clicked()",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "home",
+        "reset",
+        "gameplay"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay via the normal state-machine path from Boot"
+    },
+    {
+      "id": "H49-Evaluating",
+      "title": "Home icon reset from Evaluating posts EV_RESET and halts",
+      "starting_state": "Evaluating",
+      "action": "Invoke on_home_button_clicked()",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "home",
+        "reset",
         "evaluating"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from Connecting"
+      "reset_action": "Reach Evaluating via the normal state-machine path from Boot"
     },
     {
-      "id": "H23",
-      "title": "Gameplay -> Gameplay on EV_PEER_MOVE_RECEIVED [!local_move_chosen]",
+      "id": "H49-Result",
+      "title": "Home icon reset from Result posts EV_RESET and halts",
+      "starting_state": "Result",
+      "action": "Invoke on_home_button_clicked()",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "home",
+        "reset",
+        "result"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Result via the normal state-machine path from Boot"
+    },
+    {
+      "id": "H49-Disconnected",
+      "title": "Home icon reset from Disconnected posts EV_RESET and halts",
+      "starting_state": "Disconnected",
+      "action": "Invoke on_home_button_clicked()",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "home",
+        "reset",
+        "disconnected"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Disconnected via the normal state-machine path from Boot"
+    },
+    {
+      "id": "H49-Error",
+      "title": "Home icon reset from Error posts EV_RESET and halts",
+      "starting_state": "Error",
+      "action": "Invoke on_home_button_clicked()",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "home",
+        "reset",
+        "error"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Error via the normal state-machine path from Boot"
+    },
+    {
+      "id": "H26",
+      "title": "Gameplay -> Evaluating on EV_PEER_MOVE_RECEIVED [local_move_chosen]",
       "starting_state": "Gameplay",
-      "action": "Dispatch EV_PEER_MOVE_RECEIVED with guard_local_move_chosen returning false",
-      "expected_result": "current() == State::Gameplay and on_peer_move_pending() was invoked",
+      "action": "Dispatch EV_PEER_MOVE_RECEIVED with guard_local_move_chosen returning true",
+      "expected_result": "current() == State::Evaluating and on_peer_move_complete() was invoked; peer move stored",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
@@ -429,13 +946,33 @@
       "tags": [
         "gameplay",
         "peer_move",
-        "pending"
+        "evaluating",
+        "multi_player"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from Connecting"
+      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED with mode_multi=true, then dispatch a local move event"
     },
     {
-      "id": "H24",
+      "id": "H27",
+      "title": "Gameplay -> Gameplay on EV_PEER_MOVE_RECEIVED [!local_move_chosen]",
+      "starting_state": "Gameplay",
+      "action": "Dispatch EV_PEER_MOVE_RECEIVED with guard_not_local_move_chosen returning true",
+      "expected_result": "current() == State::Gameplay and on_peer_move_pending() was invoked; status updated to 'Peer chose — your turn'",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "gameplay",
+        "peer_move",
+        "pending",
+        "multi_player"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED with mode_multi=true and no local move chosen"
+    },
+    {
+      "id": "H28",
       "title": "Gameplay -> Disconnected on EV_DISCONNECTED",
       "starting_state": "Gameplay",
       "action": "Dispatch EV_DISCONNECTED",
@@ -447,13 +984,32 @@
       "tags": [
         "gameplay",
         "disconnected",
-        "peer_disconnect"
+        "peer_disconnect",
+        "multi_player"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from Connecting"
+      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from HostWait or Joining"
     },
     {
-      "id": "H25",
+      "id": "H29",
+      "title": "Gameplay -> Halted on EV_RESET",
+      "starting_state": "Gameplay",
+      "action": "Dispatch EV_RESET",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "gameplay",
+        "reset",
+        "halted"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Gameplay by dispatching EV_SOLO from Start or EV_CONNECTED from HostWait"
+    },
+    {
+      "id": "H30",
       "title": "Gameplay -> Error on EV_ERROR",
       "starting_state": "Gameplay",
       "action": "Dispatch EV_ERROR",
@@ -467,101 +1023,46 @@
         "error"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Gameplay by dispatching EV_CONNECTED from Connecting"
+      "reset_action": "Reach Gameplay by dispatching EV_SOLO from Start or EV_CONNECTED from HostWait"
     },
     {
-      "id": "H26-ROCK",
-      "title": "SinglePlayerFallback -> Evaluating on EV_MOVE_ROCK",
-      "starting_state": "SinglePlayerFallback",
-      "action": "Dispatch EV_MOVE_ROCK",
-      "expected_result": "current() == State::Evaluating and on_singleplayer_move_rock() was invoked",
-      "automation_method": "host_assert",
-      "hardware_required": false,
-      "environment": "host",
-      "serial_expect": null,
-      "tags": [
-        "single_player",
-        "move_selection",
-        "rock",
-        "evaluating"
-      ],
-      "prerequisite": null,
-      "reset_action": "Reach SinglePlayerFallback by dispatching EV_PEER_TIMEOUT from PeerSearch"
-    },
-    {
-      "id": "H26-PAPER",
-      "title": "SinglePlayerFallback -> Evaluating on EV_MOVE_PAPER",
-      "starting_state": "SinglePlayerFallback",
-      "action": "Dispatch EV_MOVE_PAPER",
-      "expected_result": "current() == State::Evaluating and on_singleplayer_move_paper() was invoked",
-      "automation_method": "host_assert",
-      "hardware_required": false,
-      "environment": "host",
-      "serial_expect": null,
-      "tags": [
-        "single_player",
-        "move_selection",
-        "paper",
-        "evaluating"
-      ],
-      "prerequisite": null,
-      "reset_action": "Reach SinglePlayerFallback by dispatching EV_PEER_TIMEOUT from PeerSearch"
-    },
-    {
-      "id": "H26-SCISSORS",
-      "title": "SinglePlayerFallback -> Evaluating on EV_MOVE_SCISSORS",
-      "starting_state": "SinglePlayerFallback",
-      "action": "Dispatch EV_MOVE_SCISSORS",
-      "expected_result": "current() == State::Evaluating and on_singleplayer_move_scissors() was invoked",
-      "automation_method": "host_assert",
-      "hardware_required": false,
-      "environment": "host",
-      "serial_expect": null,
-      "tags": [
-        "single_player",
-        "move_selection",
-        "scissors",
-        "evaluating"
-      ],
-      "prerequisite": null,
-      "reset_action": "Reach SinglePlayerFallback by dispatching EV_PEER_TIMEOUT from PeerSearch"
-    },
-    {
-      "id": "H29",
-      "title": "SinglePlayerFallback -> Error on EV_ERROR",
-      "starting_state": "SinglePlayerFallback",
-      "action": "Dispatch EV_ERROR",
-      "expected_result": "current() == State::Error and app_on_error() was invoked",
-      "automation_method": "host_assert",
-      "hardware_required": false,
-      "environment": "host",
-      "serial_expect": null,
-      "tags": [
-        "single_player",
-        "error"
-      ],
-      "prerequisite": null,
-      "reset_action": "Reach SinglePlayerFallback by dispatching EV_PEER_TIMEOUT from PeerSearch"
-    },
-    {
-      "id": "H30",
+      "id": "H31",
       "title": "Evaluating -> Result on EV_EVALUATE",
       "starting_state": "Evaluating",
       "action": "Dispatch EV_EVALUATE",
-      "expected_result": "current() == State::Result and evaluate_and_show_result() was invoked",
+      "expected_result": "current() == State::Result and evaluate_and_show_result() was invoked; scoreboard updated",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
         "evaluating",
-        "result"
+        "result",
+        "scoreboard"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Evaluating by dispatching a move event from Gameplay or SinglePlayerFallback"
+      "reset_action": "Reach Evaluating by dispatching a move event from Gameplay"
     },
     {
-      "id": "H31",
+      "id": "H32",
+      "title": "Evaluating -> Halted on EV_RESET",
+      "starting_state": "Evaluating",
+      "action": "Dispatch EV_RESET",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "evaluating",
+        "reset",
+        "halted"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Evaluating by dispatching a move event from Gameplay"
+    },
+    {
+      "id": "H33",
       "title": "Evaluating -> Error on EV_ERROR",
       "starting_state": "Evaluating",
       "action": "Dispatch EV_ERROR",
@@ -575,46 +1076,28 @@
         "error"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Evaluating by dispatching a move event from Gameplay or SinglePlayerFallback"
-    },
-    {
-      "id": "H32",
-      "title": "Result -> Gameplay on EV_PLAY_AGAIN [game_mode == MODE_MULTI_PLAYER]",
-      "starting_state": "Result",
-      "action": "Dispatch EV_PLAY_AGAIN with guard_game_mode_eq_MODE_MULTI_PLAYER returning true",
-      "expected_result": "current() == State::Gameplay and start_new_round() was invoked",
-      "automation_method": "host_assert",
-      "hardware_required": false,
-      "environment": "host",
-      "serial_expect": null,
-      "tags": [
-        "result",
-        "new_round",
-        "multi_player"
-      ],
-      "prerequisite": null,
-      "reset_action": "Reach Result by dispatching EV_EVALUATE from Evaluating with game_mode set to MODE_MULTI_PLAYER"
-    },
-    {
-      "id": "H33",
-      "title": "Result -> SinglePlayerFallback on EV_PLAY_AGAIN [game_mode == MODE_SINGLE_PLAYER]",
-      "starting_state": "Result",
-      "action": "Dispatch EV_PLAY_AGAIN with guard_game_mode_eq_MODE_SINGLE_PLAYER returning true",
-      "expected_result": "current() == State::SinglePlayerFallback and start_new_round() was invoked",
-      "automation_method": "host_assert",
-      "hardware_required": false,
-      "environment": "host",
-      "serial_expect": null,
-      "tags": [
-        "result",
-        "new_round",
-        "single_player"
-      ],
-      "prerequisite": null,
-      "reset_action": "Reach Result by dispatching EV_EVALUATE from Evaluating with game_mode set to MODE_SINGLE_PLAYER"
+      "reset_action": "Reach Evaluating by dispatching a move event from Gameplay"
     },
     {
       "id": "H34",
+      "title": "Result -> Gameplay on EV_PLAY_AGAIN",
+      "starting_state": "Result",
+      "action": "Dispatch EV_PLAY_AGAIN",
+      "expected_result": "current() == State::Gameplay and start_new_round() was invoked; local/peer moves cleared, move buttons enabled",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "result",
+        "gameplay",
+        "new_round"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Result by dispatching EV_EVALUATE from Evaluating"
+    },
+    {
+      "id": "H35",
       "title": "Result -> Disconnected on EV_DISCONNECTED",
       "starting_state": "Result",
       "action": "Dispatch EV_DISCONNECTED",
@@ -626,13 +1109,32 @@
       "tags": [
         "result",
         "disconnected",
-        "peer_disconnect"
+        "peer_disconnect",
+        "multi_player"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Result by dispatching EV_EVALUATE from Evaluating in multiplayer mode"
+    },
+    {
+      "id": "H36",
+      "title": "Result -> Halted on EV_RESET",
+      "starting_state": "Result",
+      "action": "Dispatch EV_RESET",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "result",
+        "reset",
+        "halted"
       ],
       "prerequisite": null,
       "reset_action": "Reach Result by dispatching EV_EVALUATE from Evaluating"
     },
     {
-      "id": "H35",
+      "id": "H37",
       "title": "Result -> Error on EV_ERROR",
       "starting_state": "Result",
       "action": "Dispatch EV_ERROR",
@@ -649,24 +1151,43 @@
       "reset_action": "Reach Result by dispatching EV_EVALUATE from Evaluating"
     },
     {
-      "id": "H36",
+      "id": "H38",
       "title": "Disconnected -> Start on EV_RETRY",
       "starting_state": "Disconnected",
       "action": "Dispatch EV_RETRY",
-      "expected_result": "current() == State::Start and reset_and_return_start() was invoked",
+      "expected_result": "current() == State::Start and reset_and_return_start() was invoked; BLE disconnected, score reset",
       "automation_method": "host_assert",
       "hardware_required": false,
       "environment": "host",
       "serial_expect": null,
       "tags": [
         "disconnected",
+        "start",
         "retry"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Disconnected by dispatching EV_DISCONNECTED from Connecting, Gameplay, or Result"
+      "reset_action": "Reach Disconnected by dispatching EV_DISCONNECTED from Gameplay or Result"
     },
     {
-      "id": "H37",
+      "id": "H39",
+      "title": "Disconnected -> Halted on EV_RESET",
+      "starting_state": "Disconnected",
+      "action": "Dispatch EV_RESET",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "disconnected",
+        "reset",
+        "halted"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Disconnected by dispatching EV_DISCONNECTED from Gameplay or Result"
+    },
+    {
+      "id": "H40",
       "title": "Disconnected -> Error on EV_ERROR",
       "starting_state": "Disconnected",
       "action": "Dispatch EV_ERROR",
@@ -680,10 +1201,10 @@
         "error"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Disconnected by dispatching EV_DISCONNECTED from Connecting, Gameplay, or Result"
+      "reset_action": "Reach Disconnected by dispatching EV_DISCONNECTED from Gameplay or Result"
     },
     {
-      "id": "H38",
+      "id": "H41",
       "title": "Error -> Start on EV_RETRY",
       "starting_state": "Error",
       "action": "Dispatch EV_RETRY",
@@ -694,13 +1215,32 @@
       "serial_expect": null,
       "tags": [
         "error",
+        "start",
         "retry"
       ],
       "prerequisite": null,
       "reset_action": "Reach Error by dispatching EV_ERROR from any state"
     },
     {
-      "id": "H39",
+      "id": "H42",
+      "title": "Error -> Halted on EV_RESET",
+      "starting_state": "Error",
+      "action": "Dispatch EV_RESET",
+      "expected_result": "current() == State::Halted and esp_restart() was invoked",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "error",
+        "reset",
+        "halted"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Error by dispatching EV_ERROR from any state"
+    },
+    {
+      "id": "H43",
       "title": "Error -> Halted on EV_ERROR [fatal]",
       "starting_state": "Error",
       "action": "Dispatch EV_ERROR with guard_fatal returning true",
@@ -718,11 +1258,83 @@
       "reset_action": "Reach Error by dispatching EV_ERROR from any state"
     },
     {
+      "id": "H45",
+      "title": "Serial parser ignores unknown or malformed commands",
+      "starting_state": "Start",
+      "action": "Feed strings 'HELLO', 'host' (lowercase), and empty line to serial_process_input()",
+      "expected_result": "No event is posted; state remains Start",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "serial",
+        "parser",
+        "negative"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Start by dispatching EV_BOOT_DONE [init_ok] from Boot"
+    },
+    {
+      "id": "H47",
+      "title": "Scoreboard persists across multiple rounds",
+      "starting_state": "Result",
+      "action": "Dispatch EV_PLAY_AGAIN then complete and evaluate two additional rounds with mixed outcomes",
+      "expected_result": "Scoreboard reflects cumulative wins, losses, and draws across all rounds played",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "scoreboard",
+        "persistence",
+        "multi_round"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach Result after a completed round"
+    },
+    {
+      "id": "H48",
+      "title": "Scoreboard resets to zero on boot",
+      "starting_state": "Boot",
+      "action": "Dispatch EV_BOOT_DONE [init_ok]",
+      "expected_result": "session_score_t wins/losses/draws are all 0 and ui_set_score() shows 'W:0 L:0 D:0'",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "scoreboard",
+        "reset",
+        "boot"
+      ],
+      "prerequisite": null,
+      "reset_action": "Construct fresh StateMachine"
+    },
+    {
+      "id": "H50",
+      "title": "Cancel hosting returns to Start and restarts beacon/scan",
+      "starting_state": "HostWait",
+      "action": "Dispatch EV_CANCEL_HOST",
+      "expected_result": "current() == State::Start; on_cancel_host() invoked; ble_start_presence_beacon() called; HostWait UI dismissed",
+      "automation_method": "host_assert",
+      "hardware_required": false,
+      "environment": "host",
+      "serial_expect": null,
+      "tags": [
+        "host_wait",
+        "cancel",
+        "start"
+      ],
+      "prerequisite": null,
+      "reset_action": "Reach HostWait by dispatching EV_HOST_GAME from Start"
+    },
+    {
       "id": "W01",
       "title": "Boot succeeds and firmware reaches Start state in Wokwi",
       "starting_state": "Boot",
       "action": "Power on/reset the device in Wokwi simulation",
-      "expected_result": "Serial output contains setup-complete and Start-state markers; no fatal error logged",
+      "expected_result": "Serial output contains 'CYD_RPS setup done' and 'STATE: Start'; no fatal error or watchdog logged",
       "automation_method": "serial_expect",
       "hardware_required": false,
       "environment": "wokwi",
@@ -733,14 +1345,171 @@
         "wokwi"
       ],
       "prerequisite": null,
-      "reset_action": null
+      "reset_action": "Power cycle or reset the device to reach Boot state"
+    },
+    {
+      "id": "W02",
+      "title": "Serial HOST command reaches HostWait in Wokwi",
+      "starting_state": "Start",
+      "action": "Send 'HOST\\n' over the Wokwi serial monitor",
+      "expected_result": "Serial output contains 'STATE: HostWait' and 'Hosting Game' UI markers; no BLE init crash",
+      "automation_method": "serial_expect",
+      "hardware_required": false,
+      "environment": "wokwi",
+      "serial_expect": "STATE: HostWait",
+      "tags": [
+        "serial",
+        "host",
+        "host_wait",
+        "wokwi"
+      ],
+      "prerequisite": null,
+      "reset_action": "Wait for Wokwi boot to reach Start state"
+    },
+    {
+      "id": "W03",
+      "title": "Serial SOLO command enters single-player Gameplay in Wokwi",
+      "starting_state": "Start",
+      "action": "Send 'SOLO\\n' over the Wokwi serial monitor",
+      "expected_result": "Serial output contains 'STATE: Gameplay' and 'MODE: SINGLE_PLAYER'; SCR_Gameplay rendered",
+      "automation_method": "serial_expect",
+      "hardware_required": false,
+      "environment": "wokwi",
+      "serial_expect": "MODE: SINGLE_PLAYER",
+      "tags": [
+        "serial",
+        "solo",
+        "gameplay",
+        "single_player",
+        "wokwi"
+      ],
+      "prerequisite": null,
+      "reset_action": "Wait for Wokwi boot to reach Start state"
+    },
+    {
+      "id": "W04",
+      "title": "Serial ROCK/PAPER/SCISSORS advances single-player round to Result in Wokwi",
+      "starting_state": "Gameplay",
+      "action": "Send 'ROCK\\n' (or PAPER/SCISSORS) over the Wokwi serial monitor",
+      "expected_result": "Serial output contains 'STATE: Evaluating' then 'STATE: Result' with OUTCOME and move strings",
+      "automation_method": "serial_expect",
+      "hardware_required": false,
+      "environment": "wokwi",
+      "serial_expect": "STATE: Result",
+      "tags": [
+        "serial",
+        "move",
+        "gameplay",
+        "result",
+        "single_player",
+        "wokwi"
+      ],
+      "prerequisite": null,
+      "reset_action": "Send 'SOLO' from Start to enter single-player Gameplay"
+    },
+    {
+      "id": "W05",
+      "title": "Serial AGAIN starts a new single-player round in Wokwi",
+      "starting_state": "Result",
+      "action": "Send 'AGAIN\\n' over the Wokwi serial monitor",
+      "expected_result": "Serial output contains 'STATE: Gameplay'; move buttons re-enabled; scoreboard persists",
+      "automation_method": "serial_expect",
+      "hardware_required": false,
+      "environment": "wokwi",
+      "serial_expect": "STATE: Gameplay",
+      "tags": [
+        "serial",
+        "play_again",
+        "new_round",
+        "single_player",
+        "wokwi"
+      ],
+      "prerequisite": null,
+      "reset_action": "Complete a single-player round to reach Result"
+    },
+    {
+      "id": "W06",
+      "title": "Serial RESET reboots from any screen in Wokwi",
+      "starting_state": "Gameplay",
+      "action": "Send 'RESET\\n' over the Wokwi serial monitor",
+      "expected_result": "Device resets; serial output repeats boot banner and 'CYD_RPS setup done'",
+      "automation_method": "serial_expect",
+      "hardware_required": false,
+      "environment": "wokwi",
+      "serial_expect": "CYD_RPS setup done",
+      "tags": [
+        "serial",
+        "reset",
+        "halted",
+        "wokwi"
+      ],
+      "prerequisite": null,
+      "reset_action": "Send 'SOLO' from Start to enter Gameplay"
+    },
+    {
+      "id": "W07",
+      "title": "Host timeout dialog appears after 15 s without peer in Wokwi",
+      "starting_state": "HostWait",
+      "action": "Enter HostWait via serial HOST and wait for the timeout timer to expire",
+      "expected_result": "Serial output contains 'STATE: HostTimeoutDialog' and 'No peer joined' or dialog markers",
+      "automation_method": "serial_expect",
+      "hardware_required": false,
+      "environment": "wokwi",
+      "serial_expect": "STATE: HostTimeoutDialog",
+      "tags": [
+        "host_wait",
+        "timeout",
+        "host_timeout_dialog",
+        "wokwi"
+      ],
+      "prerequisite": null,
+      "reset_action": "Send 'HOST' from Start to enter HostWait"
+    },
+    {
+      "id": "W08",
+      "title": "Host timeout dialog Retry returns to HostWait in Wokwi",
+      "starting_state": "HostTimeoutDialog",
+      "action": "Send 'HOST\\n' (or trigger EV_HOST_RETRY) from the timeout dialog",
+      "expected_result": "Serial output contains 'STATE: HostWait' and timeout-restart markers",
+      "automation_method": "serial_expect",
+      "hardware_required": false,
+      "environment": "wokwi",
+      "serial_expect": "STATE: HostWait",
+      "tags": [
+        "host_timeout_dialog",
+        "retry",
+        "host_wait",
+        "wokwi"
+      ],
+      "prerequisite": null,
+      "reset_action": "Enter HostWait, wait for timeout dialog"
+    },
+    {
+      "id": "W09",
+      "title": "Host timeout dialog Solo enters single-player Gameplay in Wokwi",
+      "starting_state": "HostTimeoutDialog",
+      "action": "Send 'SOLO\\n' from the timeout dialog",
+      "expected_result": "Serial output contains 'STATE: Gameplay' and 'MODE: SINGLE_PLAYER'",
+      "automation_method": "serial_expect",
+      "hardware_required": false,
+      "environment": "wokwi",
+      "serial_expect": "MODE: SINGLE_PLAYER",
+      "tags": [
+        "host_timeout_dialog",
+        "solo",
+        "gameplay",
+        "single_player",
+        "wokwi"
+      ],
+      "prerequisite": null,
+      "reset_action": "Enter HostWait, wait for timeout dialog"
     },
     {
       "id": "T01",
       "title": "Target boot succeeds and reaches Start screen",
       "starting_state": "Boot",
       "action": "Power on the CYD2USB v3 board",
-      "expected_result": "Board initializes without fatal errors, Start screen is rendered, serial logs setup done",
+      "expected_result": "game_state_t == STATE_START; ui_ready flag is true; device ID label shows the four-hex-digit local MAC-derived ID; serial logs 'CYD_RPS setup done' (secondary)",
       "automation_method": "serial_expect",
       "hardware_required": true,
       "environment": "target",
@@ -751,14 +1520,14 @@
         "target"
       ],
       "prerequisite": null,
-      "reset_action": null
+      "reset_action": "Power cycle or reset the CYD2USB board to reach Boot state"
     },
     {
       "id": "T02",
       "title": "Boot -> Error when BLE initialization fails on target",
       "starting_state": "Boot",
       "action": "Power on with BLE stack initialization blocked or misconfigured",
-      "expected_result": "Error screen is shown and serial logs a BLE-specific init failure",
+      "expected_result": "ble_init() returns false; game_state_t == STATE_ERROR; error state/code indicates BLE initialization failure; serial logs 'BLE init failed'",
       "automation_method": "serial_expect",
       "hardware_required": true,
       "environment": "target",
@@ -771,374 +1540,589 @@
         "target"
       ],
       "prerequisite": null,
-      "reset_action": null
+      "reset_action": "Power cycle or reset the CYD2USB board with BLE init blocked to reach Boot state"
     },
     {
       "id": "T03",
-      "title": "PeerSearch -> SinglePlayerFallback after discovery timeout",
-      "starting_state": "PeerSearch",
-      "action": "Wait 10 seconds without discovering a BLE peer",
-      "expected_result": "Screen switches to gameplay mode, serial reports single-player mode and Gameplay state",
+      "title": "Serial HOST command enters HostWait on target hardware",
+      "starting_state": "Start",
+      "action": "Send 'HOST\\n' over the target serial monitor",
+      "expected_result": "serial_command_dispatch() parses CMD_HOST and posts EV_HOST_GAME; game_state_t == STATE_HOST_WAIT; role_t == ROLE_HOST; host timeout timer started",
       "automation_method": "serial_expect",
       "hardware_required": true,
       "environment": "target",
-      "serial_expect": "MODE: SINGLE_PLAYER",
+      "serial_expect": "STATE: HostWait",
       "tags": [
-        "peer_search",
-        "peer_timeout",
-        "single_player",
+        "serial",
+        "host",
+        "host_wait",
         "target"
       ],
       "prerequisite": null,
-      "reset_action": "From Start screen, tap Play to enter PeerSearch"
+      "reset_action": "Wait for target boot to reach Start screen"
     },
     {
       "id": "T04",
-      "title": "PeerSearch -> RoleNegotiating when a peer is discovered",
-      "starting_state": "PeerSearch",
-      "action": "Have a second CYD2USB device in PeerSearch within BLE range",
-      "expected_result": "Peer is discovered, role negotiation begins, serial logs PEER_FOUND and ROLE assignment",
+      "title": "Serial SOLO command enters single-player Gameplay on target hardware",
+      "starting_state": "Start",
+      "action": "Send 'SOLO\\n' over the target serial monitor",
+      "expected_result": "serial_command_dispatch() parses CMD_SOLO and posts EV_SOLO; game_state_t == STATE_GAMEPLAY; game_mode_t == MODE_SINGLE_PLAYER",
       "automation_method": "serial_expect",
       "hardware_required": true,
       "environment": "target",
-      "serial_expect": "PEER_FOUND",
+      "serial_expect": "MODE: SINGLE_PLAYER",
       "tags": [
-        "peer_search",
-        "role_negotiation",
-        "peer_discovery",
+        "serial",
+        "solo",
+        "gameplay",
+        "single_player",
         "target"
       ],
       "prerequisite": null,
-      "reset_action": "On DUT, tap Play to enter PeerSearch; ensure peer device is also searching"
+      "reset_action": "Wait for target boot to reach Start screen"
     },
     {
       "id": "T05",
-      "title": "RoleNegotiating -> Connecting as Host (lower MAC)",
-      "starting_state": "RoleNegotiating",
-      "action": "Peer discovered and local public BLE MAC is lower than peer MAC",
-      "expected_result": "Device assumes Host role and starts advertising, serial logs ROLE: HOST and STATE: Connecting",
+      "title": "Serial ROCK/PAPER/SCISSORS completes a single-player round on target hardware",
+      "starting_state": "Gameplay",
+      "action": "Send 'ROCK\\n' over the target serial monitor",
+      "expected_result": "serial_command_dispatch() parses CMD_ROCK and posts EV_MOVE_ROCK; local_move_t == MOVE_ROCK; opponent/peer move stored as move_t; game_state_t transitions through STATE_EVALUATING to STATE_RESULT; outcome_t is OUTCOME_WIN, OUTCOME_LOSE, or OUTCOME_DRAW",
       "automation_method": "serial_expect",
       "hardware_required": true,
       "environment": "target",
-      "serial_expect": "ROLE: HOST",
+      "serial_expect": "STATE: Result",
       "tags": [
-        "role_negotiation",
-        "host",
-        "connecting",
+        "serial",
+        "move",
+        "gameplay",
+        "result",
+        "single_player",
         "target"
       ],
-      "prerequisite": "T04",
-      "reset_action": null
+      "prerequisite": null,
+      "reset_action": "Send 'SOLO' from Start to enter single-player Gameplay"
     },
     {
       "id": "T06",
-      "title": "RoleNegotiating -> Connecting as Join (higher MAC)",
-      "starting_state": "RoleNegotiating",
-      "action": "Peer discovered and local public BLE MAC is higher than peer MAC",
-      "expected_result": "Device assumes Join role and starts scanning/connecting, serial logs ROLE: JOIN and STATE: Connecting",
+      "title": "Scoreboard updates after a win/loss/draw on target hardware",
+      "starting_state": "Result",
+      "action": "Observe the score label and serial output after a completed round",
+      "expected_result": "session_score_t counters (wins, losses, draws) match the cumulative outcome_t; serial logs 'SCORE:' with matching numeric counters",
       "automation_method": "serial_expect",
       "hardware_required": true,
       "environment": "target",
-      "serial_expect": "ROLE: JOIN",
+      "serial_expect": "SCORE:",
       "tags": [
-        "role_negotiation",
-        "join",
-        "connecting",
+        "scoreboard",
+        "result",
         "target"
       ],
-      "prerequisite": "T04",
-      "reset_action": null
+      "prerequisite": null,
+      "reset_action": "Complete a single-player round to reach Result"
     },
     {
       "id": "T07",
-      "title": "Connecting -> Gameplay when BLE link is established",
-      "starting_state": "Connecting",
-      "action": "Wait for the BLE connection and GATT service setup to complete",
-      "expected_result": "Screen switches to SCR_Gameplay in multiplayer mode, serial logs MODE: MULTI_PLAYER and STATE: Gameplay",
+      "title": "Serial AGAIN starts a new round preserving scoreboard on target hardware",
+      "starting_state": "Result",
+      "action": "Send 'AGAIN\\n' over the target serial monitor",
+      "expected_result": "serial_command_dispatch() parses CMD_AGAIN and posts EV_PLAY_AGAIN; game_state_t == STATE_GAMEPLAY; local_move_t == MOVE_NONE; peer_move_t == MOVE_NONE; session_score_t counters unchanged",
       "automation_method": "serial_expect",
       "hardware_required": true,
       "environment": "target",
-      "serial_expect": "MODE: MULTI_PLAYER",
+      "serial_expect": "STATE: Gameplay",
       "tags": [
-        "connecting",
-        "gameplay",
-        "multi_player",
+        "serial",
+        "play_again",
+        "new_round",
+        "scoreboard",
         "target"
       ],
-      "prerequisite": "T05",
-      "reset_action": null
+      "prerequisite": null,
+      "reset_action": "Complete a single-player round to reach Result"
     },
     {
       "id": "T08",
-      "title": "Connecting -> Disconnected when peer is lost before gameplay",
-      "starting_state": "Connecting",
-      "action": "Power off or move the peer device out of range during connection setup",
-      "expected_result": "State changes to Disconnected and Start screen is shown, serial logs STATE: Disconnected",
+      "title": "Serial RESET reboots from Gameplay on target hardware",
+      "starting_state": "Gameplay",
+      "action": "Send 'RESET\\n' over the target serial monitor",
+      "expected_result": "serial_command_dispatch() parses CMD_RESET and posts EV_RESET; game_state_t == STATE_HALTED; ESP.restart() invoked; boot marker 'CYD_RPS setup done' observed after reboot",
       "automation_method": "serial_expect",
       "hardware_required": true,
       "environment": "target",
-      "serial_expect": "STATE: Disconnected",
+      "serial_expect": "CYD_RPS setup done",
       "tags": [
-        "connecting",
-        "disconnected",
-        "peer_disconnect",
+        "serial",
+        "reset",
+        "halted",
         "target"
       ],
-      "prerequisite": "T05",
-      "reset_action": null
+      "prerequisite": null,
+      "reset_action": "Send 'SOLO' from Start to enter Gameplay"
     },
     {
       "id": "T09",
-      "title": "Gameplay -> Evaluating when peer move arrives after local move",
-      "starting_state": "Gameplay",
-      "action": "After the local player has chosen a move, have the peer send its move",
-      "expected_result": "Round is evaluated and screen transitions to SCR_Result, serial logs STATE: Evaluating then STATE: Result",
+      "title": "Host timeout dialog appears after 15 s without peer on target hardware",
+      "starting_state": "HostWait",
+      "action": "Enter HostWait via serial HOST and wait 15 seconds without a peer joining",
+      "expected_result": "game_state_t == STATE_HOST_TIMEOUT_DIALOG; host_wait_timer elapsed == 15 s; dialog markers logged",
       "automation_method": "serial_expect",
       "hardware_required": true,
       "environment": "target",
-      "serial_expect": "STATE: Result",
+      "serial_expect": "STATE: HostTimeoutDialog",
       "tags": [
-        "gameplay",
-        "peer_move",
-        "evaluating",
-        "result",
+        "host_wait",
+        "timeout",
+        "host_timeout_dialog",
         "target"
       ],
       "prerequisite": null,
-      "reset_action": "Complete T07, then manually select a move on the DUT"
+      "reset_action": "Send 'HOST' from Start to enter HostWait"
     },
     {
       "id": "T10",
-      "title": "Gameplay -> Gameplay when peer move arrives before local move",
-      "starting_state": "Gameplay",
-      "action": "Have the peer send its move before the local player chooses",
-      "expected_result": "Peer move is stored, state remains Gameplay, status shows peer-chose indicator",
-      "automation_method": "serial_expect",
+      "title": "Host timeout dialog Retry restarts HostWait on target hardware",
+      "starting_state": "HostTimeoutDialog",
+      "action": "Tap the Retry button in the timeout dialog",
+      "expected_result": "Manual tap posts EV_HOST_RETRY; game_state_t == STATE_HOST_WAIT; host timeout timer restarted; progress bar value resets to 100%",
+      "automation_method": "manual",
       "hardware_required": true,
-      "environment": "target",
-      "serial_expect": "Peer chose",
+      "environment": "manual",
+      "serial_expect": "STATE: HostWait",
       "tags": [
-        "gameplay",
-        "peer_move",
-        "pending",
-        "target"
+        "host_timeout_dialog",
+        "retry",
+        "host_wait",
+        "target",
+        "manual",
+        "touch"
       ],
-      "prerequisite": "T07",
-      "reset_action": null
+      "prerequisite": null,
+      "reset_action": "Enter HostWait and wait for timeout dialog",
+      "manual_verification": "With the device showing the Host timeout dialog (SCR_HostWait with Retry/Solo overlay), tap the Retry button. Verify the dialog dismisses and the screen returns to SCR_HostWait with the progress bar refilled."
     },
     {
       "id": "T11",
-      "title": "Gameplay -> Disconnected when peer disconnects mid-round",
-      "starting_state": "Gameplay",
-      "action": "Power off or move the peer device out of range during a round",
-      "expected_result": "State changes to Disconnected and Start screen is shown, serial logs STATE: Disconnected",
-      "automation_method": "serial_expect",
-      "hardware_required": true,
-      "environment": "target",
-      "serial_expect": "STATE: Disconnected",
-      "tags": [
-        "gameplay",
-        "disconnected",
-        "peer_disconnect",
-        "target"
-      ],
-      "prerequisite": "T07",
-      "reset_action": null
-    },
-    {
-      "id": "T12",
-      "title": "Evaluating -> Result after round evaluation",
-      "starting_state": "Evaluating",
-      "action": "Wait for the evaluate_and_show_result action to complete",
-      "expected_result": "Screen shows SCR_Result with both moves and outcome, serial logs STATE: Result and OUTCOME",
-      "automation_method": "serial_expect",
-      "hardware_required": true,
-      "environment": "target",
-      "serial_expect": "STATE: Result",
-      "tags": [
-        "evaluating",
-        "result",
-        "target"
-      ],
-      "prerequisite": "T09",
-      "reset_action": null
-    },
-    {
-      "id": "T13",
-      "title": "Result -> Disconnected when peer disconnects on result screen",
-      "starting_state": "Result",
-      "action": "Power off or move the peer device out of range while SCR_Result is shown",
-      "expected_result": "State changes to Disconnected and Start screen is shown, serial logs STATE: Disconnected",
-      "automation_method": "serial_expect",
-      "hardware_required": true,
-      "environment": "target",
-      "serial_expect": "STATE: Disconnected",
-      "tags": [
-        "result",
-        "disconnected",
-        "peer_disconnect",
-        "target"
-      ],
-      "prerequisite": "T12",
-      "reset_action": null
-    },
-    {
-      "id": "M01",
-      "title": "Start -> PeerSearch by tapping Play",
-      "starting_state": "Start",
-      "action": "Tap the Play button on SCR_Start",
-      "expected_result": "Screen switches to SCR_PeerSearch, status label reads 'Searching for peer...'",
-      "automation_method": "manual",
-      "hardware_required": true,
-      "environment": "manual",
-      "serial_expect": "STATE: PeerSearch",
-      "tags": [
-        "start",
-        "peer_search",
-        "touch",
-        "manual"
-      ],
-      "prerequisite": null,
-      "reset_action": "Power cycle the device and wait for the Start screen"
-    },
-    {
-      "id": "M02",
-      "title": "PeerSearch -> Start by tapping Cancel",
-      "starting_state": "PeerSearch",
-      "action": "Tap the Cancel button on SCR_PeerSearch",
-      "expected_result": "Screen returns to SCR_Start, discovery stops",
-      "automation_method": "manual",
-      "hardware_required": true,
-      "environment": "manual",
-      "serial_expect": "STATE: Start",
-      "tags": [
-        "peer_search",
-        "cancel",
-        "touch",
-        "manual"
-      ],
-      "prerequisite": "M01",
-      "reset_action": null
-    },
-    {
-      "id": "M03",
-      "title": "SinglePlayerFallback -> Evaluating by tapping a move",
-      "starting_state": "SinglePlayerFallback",
-      "action": "Tap Rock, Paper, or Scissors on SCR_Gameplay in single-player fallback",
-      "expected_result": "Selected move is recorded, move buttons disable, opponent move is generated, screen transitions to SCR_Result",
-      "automation_method": "manual",
-      "hardware_required": true,
-      "environment": "manual",
-      "serial_expect": "STATE: Result",
-      "tags": [
-        "single_player",
-        "move_selection",
-        "touch",
-        "manual"
-      ],
-      "prerequisite": null,
-      "reset_action": "From Start, tap Play and wait 10 seconds without a peer to enter SinglePlayerFallback"
-    },
-    {
-      "id": "M04",
-      "title": "Gameplay -> Evaluating by tapping a move when peer move already received",
-      "starting_state": "Gameplay",
-      "action": "Tap Rock, Paper, or Scissors after the peer move has already arrived",
-      "expected_result": "Local move is recorded, round is evaluated, screen transitions to SCR_Result",
-      "automation_method": "manual",
-      "hardware_required": true,
-      "environment": "manual",
-      "serial_expect": "STATE: Result",
-      "tags": [
-        "gameplay",
-        "move_selection",
-        "multi_player",
-        "touch",
-        "manual"
-      ],
-      "prerequisite": null,
-      "reset_action": "Enter multiplayer Gameplay and have the peer send its move before choosing locally"
-    },
-    {
-      "id": "M05",
-      "title": "Result -> Gameplay by tapping Play Again (multiplayer)",
-      "starting_state": "Result",
-      "action": "Tap the Play Again button after a multiplayer round",
-      "expected_result": "Round state resets, move buttons re-enable, screen returns to SCR_Gameplay in multiplayer mode",
-      "automation_method": "manual",
-      "hardware_required": true,
-      "environment": "manual",
-      "serial_expect": "MODE: MULTI_PLAYER",
-      "tags": [
-        "result",
-        "new_round",
-        "multi_player",
-        "touch",
-        "manual"
-      ],
-      "prerequisite": null,
-      "reset_action": "Complete a multiplayer round so SCR_Result is shown"
-    },
-    {
-      "id": "M06",
-      "title": "Result -> SinglePlayerFallback by tapping Play Again (single-player)",
-      "starting_state": "Result",
-      "action": "Tap the Play Again button after a single-player round",
-      "expected_result": "Round state resets, move buttons re-enable, screen returns to SCR_Gameplay in single-player mode",
+      "title": "Host timeout dialog Solo enters single-player Gameplay on target hardware",
+      "starting_state": "HostTimeoutDialog",
+      "action": "Tap the Solo button in the timeout dialog",
+      "expected_result": "Manual tap posts EV_SOLO; game_state_t == STATE_GAMEPLAY; game_mode_t == MODE_SINGLE_PLAYER; dialog dismissed; move buttons enabled",
       "automation_method": "manual",
       "hardware_required": true,
       "environment": "manual",
       "serial_expect": "MODE: SINGLE_PLAYER",
       "tags": [
+        "host_timeout_dialog",
+        "solo",
+        "gameplay",
+        "single_player",
+        "target",
+        "manual",
+        "touch"
+      ],
+      "prerequisite": null,
+      "reset_action": "Enter HostWait and wait for timeout dialog",
+      "manual_verification": "With the device showing the Host timeout dialog, tap the Solo button. Verify the dialog dismisses and the screen switches to SCR_Gameplay in single-player mode."
+    },
+    {
+      "id": "T12",
+      "title": "Cancel hosting returns to Start on target hardware",
+      "starting_state": "HostWait",
+      "action": "Tap the Cancel button on SCR_HostWait",
+      "expected_result": "Manual tap posts EV_CANCEL_HOST; game_state_t == STATE_START; presence beacon and scan restart; HostWait UI dismissed",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "STATE: Start",
+      "tags": [
+        "host_wait",
+        "cancel",
+        "start",
+        "target",
+        "manual",
+        "touch"
+      ],
+      "prerequisite": null,
+      "reset_action": "Send 'HOST' from Start to enter HostWait",
+      "manual_verification": "With the device showing SCR_HostWait, tap the Cancel button. Verify the screen returns to SCR_Start and the presence beacon/scan resumes."
+    },
+    {
+      "id": "M01",
+      "title": "Tap Host Game button enters HostWait",
+      "starting_state": "Start",
+      "action": "Tap the Host Game button on SCR_Start",
+      "expected_result": "Touch event posts EV_HOST_GAME; game_state_t == STATE_HOST_WAIT; role_t == ROLE_HOST; host timeout timer started",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "STATE: HostWait",
+      "tags": [
+        "start",
+        "host_wait",
+        "touch",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Power cycle the device and wait for Start screen",
+      "manual_verification": "On SCR_Start, tap the Host Game button. Verify the screen switches to SCR_HostWait with 'Hosting Game' title, device ID, progress bar, and Cancel button."
+    },
+    {
+      "id": "M02",
+      "title": "Tap Solo button enters single-player Gameplay",
+      "starting_state": "Start",
+      "action": "Tap the Solo button on SCR_Start",
+      "expected_result": "Touch event posts EV_SOLO; game_state_t == STATE_GAMEPLAY; game_mode_t == MODE_SINGLE_PLAYER; session_score_t counters are 0/0/0; move buttons enabled",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "MODE: SINGLE_PLAYER",
+      "tags": [
+        "start",
+        "gameplay",
+        "single_player",
+        "touch",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Power cycle the device and wait for Start screen",
+      "manual_verification": "On SCR_Start, tap the Solo button. Verify the screen switches to SCR_Gameplay with score label 'W:0 L:0 D:0' and move buttons enabled."
+    },
+    {
+      "id": "M03",
+      "title": "Tap a move button completes a single-player round",
+      "starting_state": "Gameplay",
+      "action": "Tap Rock, Paper, or Scissors in single-player Gameplay",
+      "expected_result": "Touch event posts EV_MOVE_*; local_move_t is MOVE_ROCK/PAPER/SCISSORS matching the tapped button; game_state_t transitions to STATE_RESULT; outcome_t != OUTCOME_NONE",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "STATE: Result",
+      "tags": [
+        "gameplay",
         "result",
+        "single_player",
+        "touch",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Tap Solo from Start to enter single-player Gameplay",
+      "manual_verification": "In single-player SCR_Gameplay, tap Rock, Paper, or Scissors. Verify the selected move is recorded, move buttons disable, and the screen transitions to SCR_Result with the outcome."
+    },
+    {
+      "id": "M04",
+      "title": "Scoreboard updates correctly across single-player rounds",
+      "starting_state": "Result",
+      "action": "Play multiple single-player rounds and observe the score label",
+      "expected_result": "session_score_t.wins/losses/draws counters increment correctly per outcome_t; cumulative counters match the logged 'SCORE:' values",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "SCORE:",
+      "tags": [
+        "scoreboard",
+        "result",
+        "single_player",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Complete a single-player round to reach Result",
+      "manual_verification": "Play multiple single-player rounds and observe the score label. Verify wins increment W, losses increment L, and draws increment D."
+    },
+    {
+      "id": "M05",
+      "title": "Tap Play Again starts a new single-player round",
+      "starting_state": "Result",
+      "action": "Tap the Play Again button after a single-player round",
+      "expected_result": "Touch event posts EV_PLAY_AGAIN; game_state_t == STATE_GAMEPLAY; local_move_t == MOVE_NONE; peer_move_t == MOVE_NONE; session_score_t counters unchanged",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "STATE: Gameplay",
+      "tags": [
+        "result",
+        "gameplay",
         "new_round",
         "single_player",
         "touch",
         "manual"
       ],
       "prerequisite": null,
-      "reset_action": "Complete a single-player round so SCR_Result is shown"
+      "reset_action": "Complete a single-player round to reach Result",
+      "manual_verification": "After a single-player round on SCR_Result, tap Play Again. Verify the screen returns to SCR_Gameplay, move buttons re-enable, and the scoreboard is unchanged."
+    },
+    {
+      "id": "M06",
+      "title": "Home icon reset from Start reboots device",
+      "starting_state": "Start",
+      "action": "Tap the home icon in the top-right corner of SCR_Start",
+      "expected_result": "Touch event posts EV_RESET; game_state_t == STATE_HALTED; ESP.restart() invoked; boot marker 'CYD_RPS setup done' observed after reboot",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "CYD_RPS setup done",
+      "tags": [
+        "home",
+        "reset",
+        "start",
+        "touch",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Power cycle the device and wait for Start screen",
+      "manual_verification": "On SCR_Start, tap the home icon in the top-right corner. Verify the device reboots and returns to SCR_Start."
     },
     {
       "id": "M07",
-      "title": "Disconnected -> Start by tapping Retry",
-      "starting_state": "Disconnected",
-      "action": "Tap the Retry button on the disconnected/error screen",
-      "expected_result": "BLE is disconnected, game state resets, screen returns to SCR_Start",
+      "title": "Home icon reset from HostWait reboots device",
+      "starting_state": "HostWait",
+      "action": "Tap the home icon in the top-right corner of SCR_HostWait",
+      "expected_result": "Touch event posts EV_RESET; game_state_t == STATE_HALTED; ESP.restart() invoked; boot marker 'CYD_RPS setup done' observed after reboot",
       "automation_method": "manual",
       "hardware_required": true,
       "environment": "manual",
-      "serial_expect": "STATE: Start",
+      "serial_expect": "CYD_RPS setup done",
       "tags": [
-        "disconnected",
-        "retry",
+        "home",
+        "reset",
+        "host_wait",
         "touch",
         "manual"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Disconnected by losing the peer connection during a round"
+      "reset_action": "Tap Host Game from Start to enter HostWait",
+      "manual_verification": "On SCR_HostWait, tap the home icon in the top-right corner. Verify the device reboots and returns to SCR_Start."
     },
     {
       "id": "M08",
-      "title": "Error -> Start by tapping Retry",
-      "starting_state": "Error",
-      "action": "Tap the Retry button on SCR_Error",
-      "expected_result": "BLE is disconnected, game state resets, screen returns to SCR_Start",
+      "title": "Home icon reset from Gameplay reboots device",
+      "starting_state": "Gameplay",
+      "action": "Tap the home icon in the top-right corner of SCR_Gameplay",
+      "expected_result": "Touch event posts EV_RESET; game_state_t == STATE_HALTED; ESP.restart() invoked; boot marker 'CYD_RPS setup done' observed after reboot",
       "automation_method": "manual",
       "hardware_required": true,
       "environment": "manual",
-      "serial_expect": "STATE: Start",
+      "serial_expect": "CYD_RPS setup done",
       "tags": [
-        "error",
-        "retry",
+        "home",
+        "reset",
+        "gameplay",
         "touch",
         "manual"
       ],
       "prerequisite": null,
-      "reset_action": "Reach Error by triggering a runtime error condition"
+      "reset_action": "Tap Solo from Start to enter Gameplay",
+      "manual_verification": "On SCR_Gameplay, tap the home icon in the top-right corner. Verify the device reboots and returns to SCR_Start."
+    },
+    {
+      "id": "M09",
+      "title": "Home icon reset from Result reboots device",
+      "starting_state": "Result",
+      "action": "Tap the home icon in the top-right corner of SCR_Result",
+      "expected_result": "Touch event posts EV_RESET; game_state_t == STATE_HALTED; ESP.restart() invoked; boot marker 'CYD_RPS setup done' observed after reboot",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "CYD_RPS setup done",
+      "tags": [
+        "home",
+        "reset",
+        "result",
+        "touch",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Complete a single-player round to reach Result",
+      "manual_verification": "On SCR_Result, tap the home icon in the top-right corner. Verify the device reboots and returns to SCR_Start."
+    },
+    {
+      "id": "M10",
+      "title": "Home icon reset from Error/Disconnected reboots device",
+      "starting_state": "Error",
+      "action": "Tap the home icon in the top-right corner of SCR_Error",
+      "expected_result": "Touch event posts EV_RESET; game_state_t == STATE_HALTED; ESP.restart() invoked; boot marker 'CYD_RPS setup done' observed after reboot",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "CYD_RPS setup done",
+      "tags": [
+        "home",
+        "reset",
+        "error",
+        "touch",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Trigger an error condition to reach SCR_Error",
+      "manual_verification": "On SCR_Error, tap the home icon in the top-right corner. Verify the device reboots and returns to SCR_Start."
+    },
+    {
+      "id": "M11",
+      "title": "Two-board BLE: Host device enters HostWait and Joiner auto-connects",
+      "starting_state": "Start",
+      "action": "On Device A tap Host Game; place Device B on Start screen within BLE range",
+      "expected_result": "Device A role_t == ROLE_HOST and Device B role_t == ROLE_JOIN; ble_connected == true on both; game_mode_t == MODE_MULTI_PLAYER on both; game_state_t == STATE_GAMEPLAY on both",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "MODE: MULTI_PLAYER",
+      "tags": [
+        "multi_player",
+        "ble",
+        "host",
+        "joining",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Power cycle both devices and wait for Start screens",
+      "manual_verification": "On Device A tap Host Game; place Device B on SCR_Start within BLE range. Verify both devices transition to SCR_Gameplay in multiplayer mode."
+    },
+    {
+      "id": "M12",
+      "title": "Two-board BLE: complete a multiplayer round with both moves",
+      "starting_state": "Gameplay",
+      "action": "Both devices in multiplayer Gameplay; each player taps a different move button",
+      "expected_result": "Each device local_move_t and peer_move_t match the exchanged move_t values; both devices compute the same outcome_t; session_score_t counters increment consistently on both devices",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "STATE: Result",
+      "tags": [
+        "multi_player",
+        "ble",
+        "gameplay",
+        "result",
+        "scoreboard",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Establish two-board BLE connection to reach multiplayer Gameplay",
+      "manual_verification": "With both devices in multiplayer SCR_Gameplay, each player taps a different move button. Verify both devices show SCR_Result with matching moves and outcome."
+    },
+    {
+      "id": "M13",
+      "title": "Two-board BLE: peer disconnect returns to Start",
+      "starting_state": "Gameplay",
+      "action": "Power off or move the peer device out of BLE range during a multiplayer round",
+      "expected_result": "ble_connected transitions to false; game_state_t == STATE_DISCONNECTED or STATE_START after EV_RETRY; peer MAC no longer reachable",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "STATE: Disconnected",
+      "tags": [
+        "multi_player",
+        "ble",
+        "disconnected",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Establish two-board BLE connection to reach multiplayer Gameplay",
+      "manual_verification": "During a multiplayer round, power off or move the peer device out of BLE range. Verify the local device shows SCR_Start/SCR_Disconnected with Retry."
+    },
+    {
+      "id": "M14",
+      "title": "Two-board BLE: simultaneous Host conflict resolution",
+      "starting_state": "Start",
+      "action": "On both devices tap Host Game at nearly the same time",
+      "expected_result": "Lower-MAC device role_t == ROLE_HOST, other device role_t == ROLE_JOIN; both ble_connected == true; game_mode_t == MODE_MULTI_PLAYER; game_state_t == STATE_GAMEPLAY",
+      "automation_method": "manual",
+      "hardware_required": true,
+      "environment": "manual",
+      "serial_expect": "MODE: MULTI_PLAYER",
+      "tags": [
+        "multi_player",
+        "ble",
+        "host",
+        "conflict_resolution",
+        "manual"
+      ],
+      "prerequisite": null,
+      "reset_action": "Power cycle both devices and wait for Start screens",
+      "manual_verification": "On both devices tap Host Game at nearly the same time. Verify one device remains Host (lower MAC) and the other becomes Joiner, and both reach SCR_Gameplay."
     }
   ],
   "untestable_transitions": [
-    "BLE multiplayer peer discovery and role negotiation cannot be exercised in Wokwi because the ESP32 emulator does not emulate NimBLE reliably; NimBLEDevice::init() triggers a task watchdog abort. The Wokwi build defines WOKWI_SIMULATION and skips BLE stack init so the firmware boots to SCR_Start. BLE multiplayer is only available on physical CYD2USB hardware built with environment esp32-2432s028r_cyd2usb."
+    {
+      "transition": "Start -> Joining on EV_HOST_FOUND [host_mac_valid]",
+      "reason": "Wokwi does not support NimBLE initialization; BLE peer discovery and Host beacon detection cannot be exercised in Wokwi CLI.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "HostWait -> Joining on EV_HOST_FOUND [peer_host_seen]",
+      "reason": "Wokwi does not support NimBLE initialization; peer-Host advertisement detection requires a working BLE radio stack.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "HostWait -> Gameplay on EV_CONNECTED",
+      "reason": "Wokwi does not support NimBLE initialization; BLE connection and GATT setup cannot be established in the emulator.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "Joining -> Gameplay on EV_CONNECTED",
+      "reason": "Wokwi does not support NimBLE initialization; BLE connect/service-discovery/notify-enable cannot be exercised.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "Joining -> Start on EV_CONNECT_FAILED [retries_exhausted]",
+      "reason": "Wokwi does not support NimBLE initialization; the Join connection retry path requires a functional NimBLE stack.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "Gameplay -> Evaluating on EV_MOVE_* [mode_multi && peer_move_received]",
+      "reason": "Wokwi does not support NimBLE initialization; multiplayer move exchange over BLE is unavailable.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "Gameplay -> Gameplay on EV_MOVE_* [mode_multi && !peer_move_received]",
+      "reason": "Wokwi does not support NimBLE initialization; multiplayer pending-move state requires BLE.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "Gameplay -> Evaluating on EV_PEER_MOVE_RECEIVED [local_move_chosen]",
+      "reason": "Wokwi does not support NimBLE initialization; peer move notification cannot be received in the emulator.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "Gameplay -> Gameplay on EV_PEER_MOVE_RECEIVED [!local_move_chosen]",
+      "reason": "Wokwi does not support NimBLE initialization; peer move notification cannot be received in the emulator.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "Gameplay -> Disconnected on EV_DISCONNECTED",
+      "reason": "Wokwi does not support NimBLE initialization; BLE disconnect event cannot be generated in the emulator.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "Result -> Disconnected on EV_DISCONNECTED",
+      "reason": "Wokwi does not support NimBLE initialization; BLE disconnect event cannot be generated in the emulator.",
+      "environments": [
+        "wokwi"
+      ]
+    },
+    {
+      "transition": "All touch-driven transitions (Start->HostWait, Start->Solo, HostWait->Start, HostTimeoutDialog->HostWait/Solo/Start, Gameplay->Evaluating, Result->Gameplay, Error/Disconnected->Start, home reset)",
+      "reason": "Wokwi CLI does not support the wokwi-xpt2046 touch controller part; touch input must be validated on physical hardware or via manual observation.",
+      "environments": [
+        "wokwi"
+      ]
+    }
   ]
 }

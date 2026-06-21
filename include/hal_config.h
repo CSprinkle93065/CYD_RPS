@@ -1,5 +1,6 @@
 #pragma once
 
+// CYD_RPS v0.2.0
 // HAL configuration for CYD2USB v3 + LVGL 8.x + TFT_eSPI + XPT2046.
 // This file contains only constants and macros; driver instances are created
 // and initialized in the appropriate source modules.

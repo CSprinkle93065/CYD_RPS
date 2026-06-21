@@ -1,8 +1,10 @@
 #pragma once
 
+// CYD_RPS v0.2.0
 // CYD2USB v3 (ESP32-2432S028R) central pin map.
 // This file contains only symbolic pin constants; no initialization code.
-// Source: skills/cyd_hardware CYD2USB v3 reserved pin map.
+// Source: skills/cyd_hardware CYD2USB v3 reserved pin map and
+//         docs/definition.md Section 7 (Hardware Profile).
 
 // TFT display (HSPI)
 #define PIN_TFT_MOSI  13

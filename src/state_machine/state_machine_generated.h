@@ -9,36 +9,38 @@ namespace app {
 
 enum class State {
     Boot,
-    Connecting,
     Disconnected,
     Error,
     Evaluating,
     Gameplay,
     Halted,
-    PeerSearch,
+    HostTimeoutDialog,
+    HostWait,
+    Joining,
     Result,
-    RoleNegotiating,
-    SinglePlayerFallback,
     Start,
 };
 
 enum class Event {
     EV_BOOT_DONE,
-    EV_CANCEL,
+    EV_CANCEL_HOST,
     EV_CONNECTED,
+    EV_CONNECT_FAILED,
     EV_DISCONNECTED,
     EV_ERROR,
     EV_EVALUATE,
+    EV_HOST_FOUND,
+    EV_HOST_GAME,
+    EV_HOST_RETRY,
+    EV_HOST_TIMEOUT,
     EV_MOVE_PAPER,
     EV_MOVE_ROCK,
     EV_MOVE_SCISSORS,
-    EV_PEER_FOUND,
     EV_PEER_MOVE_RECEIVED,
-    EV_PEER_TIMEOUT,
-    EV_PLAY,
     EV_PLAY_AGAIN,
+    EV_RESET,
     EV_RETRY,
-    EV_ROLE_RESOLVED,
+    EV_SOLO,
 };
 
 struct Context {
@@ -56,16 +58,16 @@ public:
     // Guards
     virtual bool guard_ble_init_failed(const Context& ctx) const = 0;
     virtual bool guard_fatal(const Context& ctx) const = 0;
-    virtual bool guard_game_mode_eq_MODE_MULTI_PLAYER(const Context& ctx) const = 0;
-    virtual bool guard_game_mode_eq_MODE_SINGLE_PLAYER(const Context& ctx) const = 0;
+    virtual bool guard_host_mac_valid(const Context& ctx) const = 0;
     virtual bool guard_hw_init_failed(const Context& ctx) const = 0;
     virtual bool guard_init_ok(const Context& ctx) const = 0;
     virtual bool guard_local_move_chosen(const Context& ctx) const = 0;
+    virtual bool guard_mode_multi_and_not_peer_move_received(const Context& ctx) const = 0;
+    virtual bool guard_mode_multi_and_peer_move_received(const Context& ctx) const = 0;
+    virtual bool guard_mode_single(const Context& ctx) const = 0;
     virtual bool guard_not_local_move_chosen(const Context& ctx) const = 0;
-    virtual bool guard_not_peer_move_received(const Context& ctx) const = 0;
-    virtual bool guard_peer_move_received(const Context& ctx) const = 0;
-    virtual bool guard_role_host(const Context& ctx) const = 0;
-    virtual bool guard_role_join(const Context& ctx) const = 0;
+    virtual bool guard_peer_host_seen(const Context& ctx) const = 0;
+    virtual bool guard_retries_exhausted(const Context& ctx) const = 0;
 
     // Actions
     virtual void app_init_success() = 0;
@@ -73,9 +75,15 @@ public:
     virtual void app_on_error_ble() = 0;
     virtual void app_on_error_fatal() = 0;
     virtual void app_on_error_hw() = 0;
+    virtual void esp_restart() = 0;
     virtual void evaluate_and_show_result() = 0;
-    virtual void on_cancel_button() = 0;
-    virtual void on_discovery_timeout() = 0;
+    virtual void on_cancel_host() = 0;
+    virtual void on_conflict_become_join() = 0;
+    virtual void on_host_game() = 0;
+    virtual void on_host_retry() = 0;
+    virtual void on_host_solo() = 0;
+    virtual void on_host_timeout() = 0;
+    virtual void on_join_failed() = 0;
     virtual void on_local_move_paper_complete() = 0;
     virtual void on_local_move_paper_pending() = 0;
     virtual void on_local_move_rock_complete() = 0;
@@ -84,17 +92,14 @@ public:
     virtual void on_local_move_scissors_pending() = 0;
     virtual void on_peer_connected() = 0;
     virtual void on_peer_disconnected() = 0;
-    virtual void on_peer_found() = 0;
     virtual void on_peer_move_complete() = 0;
     virtual void on_peer_move_pending() = 0;
-    virtual void on_play_button() = 0;
     virtual void on_singleplayer_move_paper() = 0;
     virtual void on_singleplayer_move_rock() = 0;
     virtual void on_singleplayer_move_scissors() = 0;
+    virtual void on_solo() = 0;
     virtual void reset_and_return_start() = 0;
-    virtual void start_advertising_host() = 0;
     virtual void start_new_round() = 0;
-    virtual void start_scanning_join() = 0;
 
 private:
     State state_;

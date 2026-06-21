@@ -1,0 +1,18 @@
+name: CYD_RPS v0.2.0 Wokwi command trace
+version: 1
+steps:
+  - wait-serial: "CYD_RPS setup done"
+  - write-serial: "HOST\n"
+  - delay: 500ms
+  - write-serial: "SOLO\n"
+  - delay: 500ms
+  - write-serial: "ROCK\n"
+  - delay: 500ms
+  - write-serial: "AGAIN\n"
+  - delay: 500ms
+  - write-serial: "RESET\n"
+  - delay: 1500ms
+  - write-serial: "HOST\n"
+  - delay: 15500ms
+  - write-serial: "SOLO\n"
+  - delay: 500ms

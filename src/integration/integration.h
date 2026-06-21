@@ -23,7 +23,7 @@ void integration_init(void);
  * dispatches pending state-machine outputs to the UI update functions.
  *
  * IMPORTANT: This MUST be called after lv_timer_handler() in loop() so that
- * deferred BLE work scheduled by a dispatched LVGL event (e.g. EV_PLAY)
+ * deferred BLE work scheduled by a dispatched LVGL event (e.g. EV_HOST_GAME)
  * executes outside the LVGL timer context. See AppStateMachine::update().
  */
 void integration_update(void);

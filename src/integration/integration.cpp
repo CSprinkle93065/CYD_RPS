@@ -11,14 +11,13 @@
  * app_state_machine.h and implemented in the UI layer.
  *
  * Contract coverage (state_machine_contract.json):
- *   - All clickable controls (btnPlay, btnCancel, btnRock, btnPaper,
- *     btnScissors, btnPlayAgain, btnRetry) post their assigned events.
+ *   - All clickable controls (btnHostGame, btnSolo, btnCancel, btnRock, btnPaper,
+ *     btnScissors, btnPlayAgain, btnRetry, home icon) post their assigned events.
  *   - All state-driven UI adapter callbacks have strong implementations in
  *     ui.cpp, so screen/status updates are automatically wired back.
- *   - lblTimeout countdown updates are driven by the Firmware Logic agent
- *     (AppStateMachine::update_search_timeout_display() calling the weak
- *     ui_set_search_timeout() adapter), so the binding is satisfied without
- *     adding business logic to this glue layer.
+ *   - Host-wait progress updates are driven by AppStateMachine::update()
+ *     calling the weak ui_set_host_wait_progress() adapter, so the binding is
+ *     satisfied without adding business logic to this glue layer.
  *
  * Thread safety: events are enqueued under a FreeRTOS mutex created in the
  * AppStateMachine constructor, so LVGL events and BLE callbacks can safely

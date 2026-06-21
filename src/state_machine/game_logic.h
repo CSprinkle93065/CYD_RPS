@@ -1,6 +1,6 @@
 #pragma once
 
-// CYD_RPS game logic: move / outcome / game-mode enums, evaluation rules,
+// CYD_RPS v0.2.0 game logic: move / outcome / game-mode enums, evaluation rules,
 // random opponent generation, and the extended runtime context used by the
 // state-machine guards and actions.
 
@@ -13,9 +13,8 @@ namespace app {
 
 enum class Role : uint8_t {
     NONE = 0,
-    NEGOTIATING,
-    HOST,   // BLE Peripheral (lower MAC address)
-    JOIN    // BLE Central (higher MAC address)
+    HOST,   // BLE Peripheral (explicit Host selection)
+    JOIN    // BLE Central (auto-join when a Host is discovered)
 };
 
 enum class GameMode : uint8_t {
@@ -37,6 +36,12 @@ enum class Outcome : uint8_t {
     DRAW
 };
 
+struct SessionScore {
+    uint16_t wins = 0;
+    uint16_t losses = 0;
+    uint16_t draws = 0;
+};
+
 // Extended context used by the generated StateMachine guards and actions.
 // Derives from the generated empty Context so it can be passed to dispatch().
 struct GameContext : public Context {
@@ -55,15 +60,26 @@ struct GameContext : public Context {
     Move peer_move = Move::NONE;
     Outcome outcome = Outcome::NONE;
 
+    // Session scoreboard.
+    SessionScore score;
+
+    // Host discovery: the public MAC of a discovered Host beacon, valid when we
+    // are on SCR_Start and should auto-join.
+    uint8_t host_mac[6] = {0};
+    bool host_mac_valid = false;
+
+    // Conflict-resolution flag: set when a Host sees a peer-Host advertisement
+    // and should become Join.
+    bool peer_host_seen = false;
+
+    // Maximum JOIN -> HOST connection attempts (mirrors BleService).
+    static constexpr int kMaxJoinRetries = 4;
+
     // BLE link state.
     bool ble_connected = false;
 
     // Error surface used by error states.
     char error_msg[64] = {0};
-
-    // Deferred work scheduled by an LVGL-driven action and executed on the
-    // next state-machine update tick (after lv_timer_handler() has returned).
-    bool start_discovery_pending = false;
 
     void reset_round() {
         local_move = Move::NONE;
@@ -78,7 +94,6 @@ struct GameContext : public Context {
         ble_connected = false;
         fatal = false;
         error_msg[0] = '\0';
-        start_discovery_pending = false;
     }
 };
 

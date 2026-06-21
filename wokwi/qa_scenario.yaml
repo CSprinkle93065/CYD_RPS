@@ -1,0 +1,42 @@
+name: CYD_RPS v0.2.0 QA Wokwi scenario
+version: 1
+steps:
+  # W01: Boot succeeds and firmware reaches Start state
+  - wait-serial: "CYD_RPS setup start"
+  - wait-serial: "CYD_RPS setup done"
+
+  # W02: Serial HOST command reaches HostWait
+  - write-serial: "HOST\n"
+  - delay: 300ms
+  - wait-serial: "UI: Host Game button clicked"
+
+  # W06: Serial RESET reboots from any screen
+  - write-serial: "RESET\n"
+  - delay: 300ms
+  - wait-serial: "UI: Home button clicked"
+  - wait-serial: "CYD_RPS setup start"
+  - wait-serial: "CYD_RPS setup done"
+
+  # W03: Serial SOLO command enters single-player Gameplay
+  - write-serial: "SOLO\n"
+  - delay: 300ms
+  - wait-serial: "UI: Solo button clicked"
+
+  # W04: Serial ROCK advances single-player round to Result
+  - write-serial: "ROCK\n"
+  - delay: 300ms
+  - wait-serial: "UI: Rock button clicked"
+
+  # W05: Serial AGAIN starts a new single-player round
+  - write-serial: "AGAIN\n"
+  - delay: 300ms
+  - wait-serial: "UI: Play Again button clicked"
+
+  # W07: Host timeout dialog appears after 15 s without peer
+  - write-serial: "RESET\n"
+  - delay: 300ms
+  - wait-serial: "CYD_RPS setup done"
+  - write-serial: "HOST\n"
+  - delay: 300ms
+  - wait-serial: "UI: Host Game button clicked"
+  - delay: 15500ms

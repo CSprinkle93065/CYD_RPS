@@ -1,18 +1,17 @@
 @startuml
 
-title CYD_RPS Rock-Paper-Scissors State Machine
+title CYD_RPS v0.2.0 State Machine
 
-' Initial pseudo-state
+' Initial pseudo-state (required by G5.1). No terminal [*] targets.
 [*] --> Boot
 
-' Named leaf states (no composite states, no terminal [*] targets)
+' Named leaf states only. Composite states are forbidden (LL-031).
 state Boot
 state Start
-state PeerSearch
-state RoleNegotiating
-state Connecting
+state HostWait
+state HostTimeoutDialog
+state Joining
 state Gameplay
-state SinglePlayerFallback
 state Evaluating
 state Result
 state Disconnected
@@ -25,90 +24,133 @@ Boot --> Error : EV_ERROR [ble_init_failed] / app_on_error_ble()
 Boot --> Halted : EV_ERROR [hw_init_failed] / app_on_error_hw()
 
 ' ---------- Start ----------
-Start --> PeerSearch : EV_PLAY / on_play_button()
+Start --> HostWait : EV_HOST_GAME / on_host_game()
+Start --> Joining : EV_HOST_FOUND [host_mac_valid] / on_conflict_become_join()
+Start --> Gameplay : EV_SOLO / on_solo()
 Start --> Error : EV_ERROR / app_on_error()
+Start --> Halted : EV_RESET / esp_restart()
 
-' ---------- Peer search / fallback ----------
-PeerSearch --> RoleNegotiating : EV_PEER_FOUND / on_peer_found()
-PeerSearch --> SinglePlayerFallback : EV_PEER_TIMEOUT / on_discovery_timeout()
-PeerSearch --> Start : EV_CANCEL / on_cancel_button()
-PeerSearch --> Error : EV_ERROR / app_on_error()
+' ---------- Host wait / timeout ----------
+HostWait --> HostTimeoutDialog : EV_HOST_TIMEOUT / on_host_timeout()
+HostWait --> Joining : EV_HOST_FOUND [peer_host_seen] / on_conflict_become_join()
+HostWait --> Gameplay : EV_CONNECTED / on_peer_connected()
+HostWait --> Start : EV_CANCEL_HOST / on_cancel_host()
+HostWait --> Halted : EV_RESET / esp_restart()
+HostWait --> Error : EV_ERROR / app_on_error()
 
-' ---------- Role negotiation ----------
-RoleNegotiating --> Connecting : EV_ROLE_RESOLVED [role_host] / start_advertising_host()
-RoleNegotiating --> Connecting : EV_ROLE_RESOLVED [role_join] / start_scanning_join()
-RoleNegotiating --> Error : EV_ERROR / app_on_error()
+' ---------- Host timeout dialog ----------
+HostTimeoutDialog --> HostWait : EV_HOST_RETRY / on_host_retry()
+HostTimeoutDialog --> Gameplay : EV_SOLO / on_host_solo()
+HostTimeoutDialog --> Start : EV_CANCEL_HOST / on_cancel_host()
+HostTimeoutDialog --> Halted : EV_RESET / esp_restart()
 
-' ---------- Connection ----------
-Connecting --> Gameplay : EV_CONNECTED / on_peer_connected()
-Connecting --> Disconnected : EV_DISCONNECTED / on_peer_disconnected()
-Connecting --> Error : EV_ERROR / app_on_error()
+' ---------- Peer auto-join ----------
+Joining --> Gameplay : EV_CONNECTED / on_peer_connected()
+Joining --> Start : EV_CONNECT_FAILED [retries_exhausted] / on_join_failed()
+Joining --> Halted : EV_RESET / esp_restart()
+Joining --> Error : EV_ERROR / app_on_error()
 
-' ---------- Multi-player gameplay ----------
-Gameplay --> Evaluating : EV_MOVE_ROCK [peer_move_received] / on_local_move_rock_complete()
-Gameplay --> Evaluating : EV_MOVE_PAPER [peer_move_received] / on_local_move_paper_complete()
-Gameplay --> Evaluating : EV_MOVE_SCISSORS [peer_move_received] / on_local_move_scissors_complete()
+' ---------- Gameplay ----------
+Gameplay --> Evaluating : EV_MOVE_ROCK [mode_single] / on_singleplayer_move_rock()
+Gameplay --> Evaluating : EV_MOVE_PAPER [mode_single] / on_singleplayer_move_paper()
+Gameplay --> Evaluating : EV_MOVE_SCISSORS [mode_single] / on_singleplayer_move_scissors()
 
-Gameplay --> Gameplay : EV_MOVE_ROCK [!peer_move_received] / on_local_move_rock_pending()
-Gameplay --> Gameplay : EV_MOVE_PAPER [!peer_move_received] / on_local_move_paper_pending()
-Gameplay --> Gameplay : EV_MOVE_SCISSORS [!peer_move_received] / on_local_move_scissors_pending()
+Gameplay --> Evaluating : EV_MOVE_ROCK [mode_multi && peer_move_received] / on_local_move_rock_complete()
+Gameplay --> Evaluating : EV_MOVE_PAPER [mode_multi && peer_move_received] / on_local_move_paper_complete()
+Gameplay --> Evaluating : EV_MOVE_SCISSORS [mode_multi && peer_move_received] / on_local_move_scissors_complete()
+
+Gameplay --> Gameplay : EV_MOVE_ROCK [mode_multi && !peer_move_received] / on_local_move_rock_pending()
+Gameplay --> Gameplay : EV_MOVE_PAPER [mode_multi && !peer_move_received] / on_local_move_paper_pending()
+Gameplay --> Gameplay : EV_MOVE_SCISSORS [mode_multi && !peer_move_received] / on_local_move_scissors_pending()
 
 Gameplay --> Evaluating : EV_PEER_MOVE_RECEIVED [local_move_chosen] / on_peer_move_complete()
 Gameplay --> Gameplay : EV_PEER_MOVE_RECEIVED [!local_move_chosen] / on_peer_move_pending()
 
 Gameplay --> Disconnected : EV_DISCONNECTED / on_peer_disconnected()
+Gameplay --> Halted : EV_RESET / esp_restart()
 Gameplay --> Error : EV_ERROR / app_on_error()
-
-' ---------- Single-player fallback ----------
-SinglePlayerFallback --> Evaluating : EV_MOVE_ROCK / on_singleplayer_move_rock()
-SinglePlayerFallback --> Evaluating : EV_MOVE_PAPER / on_singleplayer_move_paper()
-SinglePlayerFallback --> Evaluating : EV_MOVE_SCISSORS / on_singleplayer_move_scissors()
-SinglePlayerFallback --> Error : EV_ERROR / app_on_error()
 
 ' ---------- Evaluation ----------
 Evaluating --> Result : EV_EVALUATE / evaluate_and_show_result()
+Evaluating --> Halted : EV_RESET / esp_restart()
 Evaluating --> Error : EV_ERROR / app_on_error()
 
 ' ---------- Result / new round ----------
-Result --> Gameplay : EV_PLAY_AGAIN [game_mode == MODE_MULTI_PLAYER] / start_new_round()
-Result --> SinglePlayerFallback : EV_PLAY_AGAIN [game_mode == MODE_SINGLE_PLAYER] / start_new_round()
+Result --> Gameplay : EV_PLAY_AGAIN / start_new_round()
 Result --> Disconnected : EV_DISCONNECTED / on_peer_disconnected()
+Result --> Halted : EV_RESET / esp_restart()
 Result --> Error : EV_ERROR / app_on_error()
 
-' ---------- Disconnected / error handling ----------
+' ---------- Disconnected ----------
 Disconnected --> Start : EV_RETRY / reset_and_return_start()
+Disconnected --> Halted : EV_RESET / esp_restart()
 Disconnected --> Error : EV_ERROR / app_on_error()
 
+' ---------- Error ----------
 Error --> Start : EV_RETRY / reset_and_return_start()
+Error --> Halted : EV_RESET / esp_restart()
 Error --> Halted : EV_ERROR [fatal] / app_on_error_fatal()
 
-' ---------- UI-to-State contract note block ----------
+' ---------- Halted ----------
+' Terminal leaf state; device reboots via EV_RESET before reaching here.
+
+' ---------- UI-to-State contract note block (required by G5.1) ----------
 note as UIContract
-  UI-to-State Contract (see state_machine_contract.json for the full binding):
+  UI-to-State Contract (see state_machine_contract.json for full bindings):
 
   SCR_Start:
-    - btnPlay click         -> post EV_PLAY      -> Start --> PeerSearch
-    - lblStatusStart text   -> updated by app_init_success() / on_entry to Start
+    - lblTitle        static "CYD RPS"
+    - lblDeviceId     dynamic via ui_set_device_id()
+    - lblStatus       dynamic via ui_set_status()
+    - btnHostGame     click -> post EV_HOST_GAME      -> Start --> HostWait
+    - btnSolo         click -> post EV_SOLO           -> Start --> Gameplay
+    - btnHome         click -> post EV_RESET          -> ESP.restart()
 
-  SCR_PeerSearch:
-    - btnCancel click       -> post EV_CANCEL    -> PeerSearch --> Start
-    - barSearch value       -> driven by discovery timer (ui_set_search_progress)
-    - lblTimeout text       -> driven by discovery countdown timer
+  SCR_HostWait:
+    - lblTitle        static "Hosting Game"
+    - lblDeviceId     dynamic via ui_set_device_id()
+    - lblStatus       dynamic via ui_set_status()
+    - barProgress     dynamic via ui_set_host_wait_progress()
+    - btnCancel       click -> post EV_CANCEL_HOST    -> HostWait --> Start
+    - btnHome         click -> post EV_RESET          -> ESP.restart()
 
-  SCR_Gameplay (also used by SinglePlayerFallback):
-    - btnRock click         -> post EV_MOVE_ROCK
-    - btnPaper click        -> post EV_MOVE_PAPER
-    - btnScissors click     -> post EV_MOVE_SCISSORS
-    - move buttons disabled after a move is chosen, re-enabled on new round
+  Host timeout dialog (over SCR_HostWait):
+    - btnRetry        click -> post EV_HOST_RETRY     -> HostTimeoutDialog --> HostWait
+    - btnSolo         click -> post EV_SOLO           -> HostTimeoutDialog --> Gameplay
+
+  SCR_Gameplay:
+    - lblTitle        static "Choose!"
+    - lblScore        dynamic via ui_set_score()
+    - lblStatus       dynamic via ui_set_status()
+    - btnRock         click -> post EV_MOVE_ROCK
+    - btnPaper        click -> post EV_MOVE_PAPER
+    - btnScissors     click -> post EV_MOVE_SCISSORS
+    - btnHome         click -> post EV_RESET          -> ESP.restart()
+    - move buttons disabled by ui_set_move_buttons_enabled(false) after a move
 
   SCR_Result:
-    - btnPlayAgain click    -> post EV_PLAY_AGAIN -> Result --> Gameplay or SinglePlayerFallback
+    - lblTitle        static "Result"
+    - lblScore        dynamic via ui_set_score()
+    - lblLocalMove    set by ui_show_screen_result()
+    - lblPeerMove     set by ui_show_screen_result()
+    - lblOutcome      set by ui_show_screen_result() (color per outcome)
+    - btnPlayAgain    click -> post EV_PLAY_AGAIN     -> Result --> Gameplay
+    - btnHome         click -> post EV_RESET          -> ESP.restart()
 
   SCR_Error:
-    - btnRetry click        -> post EV_RETRY      -> Error/Disconnected --> Start
-    - lblErrorMsg text      -> set by app_on_error_*() actions
+    - lblErrorTitle   static "Error"
+    - lblErrorMsg     dynamic via ui_show_screen_error()
+    - btnRetry        click -> post EV_RETRY          -> Error --> Start
+    - btnHome         click -> post EV_RESET          -> ESP.restart()
 
-  Disconnected and Halted reuse SCR_Error / SCR_Start visuals as noted in contract.
+  Serial commands (post equivalent events):
+    - HOST            -> EV_HOST_GAME
+    - SOLO            -> EV_SOLO
+    - ROCK            -> EV_MOVE_ROCK
+    - PAPER           -> EV_MOVE_PAPER
+    - SCISSORS        -> EV_MOVE_SCISSORS
+    - AGAIN           -> EV_PLAY_AGAIN
+    - RESET/HOME      -> EV_RESET
 end note
 
 @enduml

@@ -14,8 +14,6 @@ namespace app {
 const char* const RPS_SERVICE_UUID_STR = "a07498ca-ad5b-474e-940d-263601a52152";
 const char* const RPS_MOVE_CHAR_UUID_STR = "a07498ca-ad5b-474e-940d-263601a52153";
 
-
-
 // Convenience casts from the opaque void* handles stored in BleService.
 static inline NimBLEServer* server_ptr(void* p) { return reinterpret_cast<NimBLEServer*>(p); }
 static inline NimBLEService* service_ptr(void* p) { return reinterpret_cast<NimBLEService*>(p); }
@@ -53,30 +51,34 @@ class RpsAdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 public:
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) override {
         static const NimBLEUUID service_uuid(RPS_SERVICE_UUID_STR);
-        if (advertisedDevice->isAdvertisingService(service_uuid)) {
-            uint8_t addr[6];
-            memcpy(addr, advertisedDevice->getAddress().getNative(), 6);
-            // Capture the address type as well as the bytes. Reconstructing
-            // the NimBLEAddress with BLE_ADDR_PUBLIC when the peer advertised a
-            // random address causes connection status=13. See
-            // docs/BugReport_CYD_RPS_v0.1.4.md §6.1 and §8.2.
+        if (!advertisedDevice->isAdvertisingService(service_uuid)) {
+            return;
+        }
 
-            // The peer's public MAC is carried in the manufacturer-specific
-            // data so both sides can resolve roles with a stable, symmetric
-            // identifier instead of the random advertisement address. See
-            // docs/BugReport_CYD_RPS_v0.1.5.md §6.3 and §8.3.
-            uint8_t public_addr[6] = {0};
-            bool public_addr_valid = false;
+        // The Host advertises on its public MAC. Prefer the advertised address
+        // when it is public; otherwise fall back to the public MAC carried in
+        // the manufacturer-specific data. This satisfies Decision D08: connect
+        // to the Host public MAC directly with BLE_ADDR_PUBLIC instead of
+        // reconstructing an address from getNative() with the wrong type.
+        NimBLEAddress addr = advertisedDevice->getAddress();
+        uint8_t public_mac[6];
+        bool public_mac_valid = false;
+
+        if (addr.getType() == BLE_ADDR_PUBLIC) {
+            memcpy(public_mac, addr.getNative(), 6);
+            public_mac_valid = true;
+        } else {
             const std::string manu = advertisedDevice->getManufacturerData();
-            if (manu.length() >= 8 &&
-                static_cast<uint8_t>(manu[0]) == (BleService::kManufacturerCompanyId & 0xFF) &&
-                static_cast<uint8_t>(manu[1]) == ((BleService::kManufacturerCompanyId >> 8) & 0xFF)) {
-                memcpy(public_addr, manu.data() + 2, 6);
-                public_addr_valid = true;
+            if (manu.length() >= 12 &&
+                static_cast<uint8_t>(manu[0]) == (BleService::PRESENCE_COMPANY_ID & 0xFF) &&
+                static_cast<uint8_t>(manu[1]) == ((BleService::PRESENCE_COMPANY_ID >> 8) & 0xFF)) {
+                memcpy(public_mac, manu.data() + 2 + 4, 6);  // after 4-char device ID
+                public_mac_valid = true;
             }
+        }
 
-            ble_service().on_peer_found(addr, advertisedDevice->getAddress().getType(),
-                                        public_addr_valid ? public_addr : nullptr);
+        if (public_mac_valid) {
+            ble_service().on_host_found(public_mac);
         }
     }
 };
@@ -102,7 +104,7 @@ BleService& ble_service() {
 }
 
 // ---------------------------------------------------------------------------
-// Initialization / discovery
+// Initialization
 // ---------------------------------------------------------------------------
 
 bool BleService::init() {
@@ -110,21 +112,26 @@ bool BleService::init() {
         return true;
     }
 
+#if defined(WOKWI_SIMULATION)
+    // Wokwi's ESP32 emulator does not emulate NimBLE reliably. Treat BLE init
+    // as success so the boot flow reaches SCR_Start; multiplayer is unavailable
+    // in simulation. LL-037.
+    Serial.println("CYD_RPS: Wokwi simulation - BLE stack skipped");
+    initialized_ = true;
+    return true;
+#else
     NimBLEDevice::init(BLE_DEVICE_NAME);
 
-    // Clear any stale bonding/identity data left over from earlier firmware
-    // versions or previous connection attempts. Stale IRK/bond records can
-    // cause the peer controller to reject an incoming connection with
-    // BLE_ERR_REM_USER_CONN_TERM (status=13). Long-term bonding can be
-    // reintroduced intentionally later. Wrapped for WOKWI_SIMULATION because
-    // bonding helpers require a fully initialized NimBLE stack.
-    // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.5.
-#ifndef WOKWI_SIMULATION
-    NimBLEDevice::deleteAllBonds();
-#endif
+    // Use the public MAC for Host advertising and for the stable device ID.
+    NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC);
+
+    // Capture our public MAC for beacon/device-id generation.
+    NimBLEAddress local_addr = NimBLEDevice::getAddress();
+    memcpy(public_mac_, local_addr.getNative(), 6);
 
     // Create the GATT server and move characteristic up-front so both roles
-    // can share the same attribute handle layout.
+    // share the same attribute handle layout. LL-044: start the GATT server
+    // before any GAP scan/advertise/connection procedure is active.
     server_ = NimBLEDevice::createServer();
     NimBLEServer* srv = server_ptr(server_);
     if (!srv) {
@@ -148,16 +155,11 @@ bool BleService::init() {
         return false;
     }
 
-    // Start the GATT server now, while no GAP scan/advertise/connection
-    // procedure is active. NimBLEAdvertising::start() lazily calls
-    // NimBLEServer::start() if m_gattsStarted is false; if that lazy start
-    // happens while discovery is already active, ble_gatts_start() returns
-    // BLE_HS_EBUSY (rc=15) and the library abort()s. See
-    // docs/BugReport_CYD_RPS_v0.1.2.md §6 and §8.1.
-    server_ptr(server_)->start();
+    srv->start();
 
     initialized_ = true;
     return true;
+#endif
 }
 
 void BleService::start_radio_task() {
@@ -165,7 +167,7 @@ void BleService::start_radio_task() {
         return;
     }
     if (radio_cmd_queue_ == nullptr) {
-        radio_cmd_queue_ = xQueueCreate(4, sizeof(RadioCommand));
+        radio_cmd_queue_ = xQueueCreate(8, sizeof(RadioCommand));
     }
     if (radio_cmd_queue_ == nullptr) {
         Serial.println("ERROR: BLE radio command queue creation failed");
@@ -186,362 +188,295 @@ void BleService::start_radio_task() {
     }
 }
 
-void BleService::signal_discovery_start() {
-    if (!radio_task_ready()) {
-        start_discovery();
-        return;
-    }
-    RadioCommand cmd = RadioCommand::START_DISCOVERY;
-    if (xQueueSend(radio_cmd_queue_, &cmd, 0) != pdPASS) {
-        // Queue full (should never happen with a 4-slot queue). Fall back to
-        // the direct path so the game does not silently stall.
-        Serial.println("ERROR: BLE radio command queue full");
-        start_discovery();
-    }
-}
-
-void BleService::signal_become_host() {
-    if (!radio_task_ready()) {
-        resolve_role();
-        return;
-    }
-    RadioCommand cmd = RadioCommand::BECOME_HOST;
-    if (xQueueSend(radio_cmd_queue_, &cmd, 0) != pdPASS) {
-        // Queue full - run directly on the main task as a safety fallback.
-        Serial.println("ERROR: BLE radio command queue full");
-        resolve_role();
-    }
-}
-
-void BleService::signal_connect_to_host() {
-    if (!radio_task_ready()) {
-        connect_to_host();
-        return;
-    }
-    RadioCommand cmd = RadioCommand::CONNECT_TO_HOST;
-    if (xQueueSend(radio_cmd_queue_, &cmd, 0) != pdPASS) {
-        // Queue full - run directly on the main task as a safety fallback.
-        Serial.println("ERROR: BLE radio command queue full");
-        connect_to_host();
-    }
-}
-
-void BleService::start_discovery() {
-    do_start_discovery();
-}
-
-void BleService::do_start_discovery() {
-    role_ = Role::NONE;
-    connected_ = false;
-    discovering_ = true;
-    peer_timeout_posted_ = false;
-    pending_peer_move_ = Move::NONE;
-    peer_addr_valid_ = false;
-    peer_addr_type_ = 0;  // BLE_ADDR_PUBLIC default for each new discovery cycle
-    peer_public_addr_valid_ = false;
-    advertising_pending_ = false;
-    memset(peer_addr_, 0, sizeof(peer_addr_));
-    memset(peer_public_addr_, 0, sizeof(peer_public_addr_));
-
-    Serial.printf("BLE: start_discovery heap=%u\n", ESP.getFreeHeap());
-
-    if (!initialized_) {
-#if defined(WOKWI_SIMULATION)
-        // Wokwi does not emulate NimBLE, so the machine cannot discover a real
-        // peer. Force the single-player fallback path by making the polled
-        // timeout expire on the very next update() tick.
-        Serial.println("CYD_RPS: Wokwi - BLE skipped, forcing single-player fallback");
-        discovery_start_ms_ = millis() - BleService::DISCOVERY_TIMEOUT_MS;
-#else
-        // On physical hardware this is an unexpected failure: NimBLE should
-        // have been initialized by main.cpp. Route through the PUML error
-        // transition instead of silently stalling in PeerSearch.
-        Serial.println("ERROR: BLE not initialized");
-        discovering_ = false;
-        sm_post_event(Event::EV_ERROR);
-#endif
-        return;
-    }
-
-    // Start scanning for peers advertising the RPS service.
-    // Use the non-blocking overload (callback-based API) and let the state-
-    // machine update loop drive the 10 s timeout via post_peer_timeout_if_needed().
-    if (!start_scanning()) {
-        Serial.println("ERROR: BLE scan start failed");
-        do_stop_discovery();
-        discovering_ = false;
-        sm_post_event(Event::EV_ERROR);
-        return;
-    }
-
-    // Defer advertising startup by one cycle. In the radio-task path the task
-    // immediately calls start_advertising_if_needed() after this returns, so
-    // the actual advertise start still happens on the dedicated task stack.
-    advertising_pending_ = true;
-    discovery_start_ms_ = millis();
-}
-
-void BleService::stop_discovery() {
-    if (!radio_task_ready()) {
-        do_stop_discovery();
-        return;
-    }
-    RadioCommand cmd = RadioCommand::STOP_DISCOVERY;
-    if (xQueueSend(radio_cmd_queue_, &cmd, 0) != pdPASS) {
-        // Queue full - stop directly as a safety fallback.
-        do_stop_discovery();
-    }
-}
-
-void BleService::do_stop_discovery() {
-    stop_scanning();
-    stop_advertising();
-    discovering_ = false;
-    advertising_pending_ = false;
-    peer_addr_valid_ = false;
-    peer_addr_type_ = 0;  // BLE_ADDR_PUBLIC default
-    peer_public_addr_valid_ = false;
-    memset(peer_addr_, 0, sizeof(peer_addr_));
-    memset(peer_public_addr_, 0, sizeof(peer_public_addr_));
-}
-
-void BleService::disconnect() {
-    if (client_) {
-        client_ptr(client_)->disconnect();
-    }
-    if (server_) {
-        server_ptr(server_)->disconnect(0, 0);
-    }
-    connected_ = false;
-}
-
 // ---------------------------------------------------------------------------
-// Peer discovery callback and role resolution
+// Public API wrappers around the radio task or direct path
 // ---------------------------------------------------------------------------
 
-void BleService::on_peer_found(const uint8_t peer_addr[6], uint8_t addr_type,
-                               const uint8_t peer_public_addr[6]) {
-    if (!peer_addr) {
+void BleService::start_presence_beacon() {
+    if (radio_task_ready()) {
+        RadioCommand cmd = {RadioCommandType::START_PRESENCE, {0}};
+        xQueueSend(radio_cmd_queue_, &cmd, 0);
         return;
     }
-
-    // Already resolved or captured a peer for this cycle.
-    if (role_ != Role::NONE || peer_addr_valid_) {
-        return;
-    }
-
-    // Self-discovery guard: ignore any advertisement whose stable identifier
-    // matches the local address. Prefer the public MAC carried in the
-    // manufacturer data; fall back to the random advertisement address if the
-    // payload is not present. See docs/BugReport_CYD_RPS_v0.1.5.md §6.3.
-    NimBLEAddress local_addr = NimBLEDevice::getAddress();
-    const uint8_t* local = local_addr.getNative();
-    if (peer_public_addr) {
-        if (memcmp(local, peer_public_addr, 6) == 0) {
-            return;
-        }
-        memcpy(peer_public_addr_, peer_public_addr, 6);
-        peer_public_addr_valid_ = true;
-    } else {
-        peer_public_addr_valid_ = false;
-        if (memcmp(local, peer_addr, 6) == 0) {
-            return;
-        }
-    }
-
-    memcpy(peer_addr_, peer_addr, 6);
-    peer_addr_type_ = addr_type;
-    peer_addr_valid_ = true;
-
-    // Instrumentation: captured address, address type, and public-MAC validity.
-    // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.1.
-    {
-        NimBLEAddress captured(peer_addr_, peer_addr_type_);
-        Serial.printf("BLE: on_peer_found addr=%s type=%d public_valid=%d\n",
-                      captured.toString().c_str(), peer_addr_type_,
-                      peer_public_addr_valid_);
-    }
-
-    // Move the machine from PeerSearch to RoleNegotiating; actual role
-    // resolution is performed by resolve_role() on the dedicated radio task.
-    sm_post_event(Event::EV_PEER_FOUND);
+    do_start_presence_beacon();
 }
 
-void BleService::resolve_role() {
-    if (!peer_addr_valid_ || role_ != Role::NONE) {
+void BleService::stop_presence_beacon() {
+    if (radio_task_ready()) {
+        RadioCommand cmd = {RadioCommandType::STOP_PRESENCE, {0}};
+        xQueueSend(radio_cmd_queue_, &cmd, 0);
         return;
     }
+    do_stop_presence_beacon();
+}
 
-    const NimBLEAddress local_addr = NimBLEDevice::getAddress();
-    const uint8_t* local = local_addr.getNative();
-
-    // Use the stable public MAC from the advertisement payload for symmetric
-    // role resolution; fall back to the random advertisement address only if
-    // the peer did not include manufacturer data. See
-    // docs/BugReport_CYD_RPS_v0.1.5.md §6.3 and §8.3.
-    const uint8_t* peer_id = peer_addr_;
-    if (peer_public_addr_valid_) {
-        peer_id = peer_public_addr_;
-    }
-
-    const int cmp = memcmp(local, peer_id, 6);
-    if (cmp == 0) {
-        // Should have been filtered by on_peer_found(), but ignore safely.
+void BleService::stop_host_advertising() {
+    if (radio_task_ready()) {
+        RadioCommand cmd = {RadioCommandType::STOP_HOST, {0}};
+        xQueueSend(radio_cmd_queue_, &cmd, 0);
         return;
     }
+    do_stop_host_advertising();
+}
 
-    // Instrumentation: local vs peer MAC comparison and chosen role.
-    // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.1.
-    {
-        uint8_t peer_addr_copy[6];
-        memcpy(peer_addr_copy, peer_addr_, 6);
-        NimBLEAddress peer_addr_obj(peer_addr_copy, peer_addr_type_);
-        Serial.printf("BLE: resolve_role local=%s peer=%s cmp=%d role=%s\n",
-                      local_addr.toString().c_str(),
-                      peer_addr_obj.toString().c_str(), cmp,
-                      cmp < 0 ? "HOST" : "JOIN");
+void BleService::restart_host_advertising() {
+    if (radio_task_ready()) {
+        RadioCommand cmd = {RadioCommandType::RESTART_HOST, {0}};
+        xQueueSend(radio_cmd_queue_, &cmd, 0);
+        return;
     }
-
-    if (cmp < 0) {
-        become_host();
-    } else {
-        become_join(peer_addr_);
-    }
+    do_restart_host_advertising();
 }
 
 void BleService::become_host() {
-    role_ = Role::HOST;
-    advertising_pending_ = false;
-    // Host is the Peripheral: stop scanning and enter a clean peripheral-only
-    // connectable state. The advertisement started while the controller was
-    // also scanning may not be accepted as a valid connection target once
-    // scanning stops, so stop and restart advertising after a short guard delay.
-    // We keep using the same NimBLEAdvertising object so the random address is
-    // not intentionally rotated, but note that some NimBLE builds may regenerate
-    // the address on restart; if that happens the JOIN's captured address
-    // becomes stale and directed advertising or a fixed static random address
-    // should be considered. Directed advertising is not implemented here because
-    // the basic restart is expected to be sufficient; reevaluate if status=13
-    // persists.
-    // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.3 and §9.4.
+    if (radio_task_ready()) {
+        RadioCommand cmd = {RadioCommandType::BECOME_HOST, {0}};
+        xQueueSend(radio_cmd_queue_, &cmd, 0);
+        return;
+    }
+    do_become_host();
+}
+
+void BleService::connect_to_host(const uint8_t host_public_mac[6]) {
+    if (radio_task_ready()) {
+        RadioCommand cmd;
+        cmd.type = RadioCommandType::CONNECT_TO_HOST;
+        memcpy(cmd.mac, host_public_mac, 6);
+        xQueueSend(radio_cmd_queue_, &cmd, 0);
+        return;
+    }
+    do_connect_to_host(host_public_mac);
+}
+
+void BleService::signal_start_presence_beacon() { start_presence_beacon(); }
+void BleService::signal_stop_presence_beacon() { stop_presence_beacon(); }
+void BleService::signal_stop_host_advertising() { stop_host_advertising(); }
+void BleService::signal_restart_host_advertising() { restart_host_advertising(); }
+void BleService::signal_become_host() { become_host(); }
+void BleService::signal_connect_to_host(const uint8_t host_public_mac[6]) { connect_to_host(host_public_mac); }
+
+// ---------------------------------------------------------------------------
+// Direct implementation: presence beacon
+// ---------------------------------------------------------------------------
+
+void BleService::do_start_presence_beacon() {
+    if (!initialized_) {
+        return;
+    }
+
+    // Stop any active host advertising first.
+    do_stop_host_advertising();
+
+    role_ = Role::NONE;
+    presence_active_ = true;
+    host_active_ = false;
+    peer_public_mac_valid_ = false;
+    memset(peer_public_mac_, 0, sizeof(peer_public_mac_));
+
+    if (!start_scanning()) {
+        Serial.println("ERROR: BLE scan start failed");
+        do_stop_presence_beacon();
+        sm_post_event(Event::EV_ERROR);
+        return;
+    }
+
+    start_presence_advertising();
+}
+
+void BleService::do_stop_presence_beacon() {
     stop_scanning();
     stop_advertising();
-    vTaskDelay(pdMS_TO_TICKS(20));
-    if (!start_advertising()) {
-        Serial.println("ERROR: BLE host advertise start failed");
-        do_stop_discovery();
-        discovering_ = false;
+    presence_active_ = false;
+}
+
+void BleService::start_presence_advertising() {
+    if (!initialized_ || !presence_active_) {
+        return;
+    }
+
+    if (ESP.getFreeHeap() < MIN_HEAP_FOR_BLE_ADV) {
+        Serial.println("ERROR: insufficient heap for presence advertising");
+        do_stop_presence_beacon();
         sm_post_event(Event::EV_ERROR);
         return;
     }
-    Serial.println("HOST: stopped scan, advertising ready");
-    sm_post_event(Event::EV_ROLE_RESOLVED);
+
+    if (!advertising_) {
+        advertising_ = NimBLEDevice::getAdvertising();
+    }
+    NimBLEAdvertising* adv = adv_ptr(advertising_);
+    if (!adv) {
+        return;
+    }
+
+    // Build manufacturer-specific data: company ID 0xFF + 4-char device ID +
+    // 6-byte public MAC.
+    char id[5];
+    get_device_id(id, sizeof(id));
+
+    std::string manu;
+    manu.push_back(static_cast<uint8_t>(PRESENCE_COMPANY_ID & 0xFF));
+    manu.push_back(static_cast<uint8_t>((PRESENCE_COMPANY_ID >> 8) & 0xFF));
+    manu.append(id);
+    manu.append(reinterpret_cast<const char*>(public_mac_), 6);
+
+    adv->setManufacturerData(manu);
+    adv->setMinInterval(PRESENCE_ADV_MIN_INTERVAL);
+    adv->setMaxInterval(PRESENCE_ADV_MAX_INTERVAL);
+    adv->start();
 }
 
-void BleService::become_join(const uint8_t peer_addr[6]) {
-    role_ = Role::JOIN;
-    advertising_pending_ = false;
-    // Join is the Central: stop scanning so it can drive the connection, but
-    // KEEP ADVERTISING so the peer (which will become HOST) can still discover
-    // this unit and resolve its own role. Stopping advertising here caused the
-    // v0.1.5 asymmetric role-negotiation failure. See
-    // docs/BugReport_CYD_RPS_v0.1.5.md §6.1 and §8.1.
+// ---------------------------------------------------------------------------
+// Direct implementation: Host mode
+// ---------------------------------------------------------------------------
+
+void BleService::do_become_host() {
+    if (!initialized_) {
+        sm_post_event(Event::EV_ERROR);
+        return;
+    }
+
+    role_ = Role::HOST;
+    presence_active_ = false;
+    host_active_ = true;
+    peer_public_mac_valid_ = false;
+    memset(peer_public_mac_, 0, sizeof(peer_public_mac_));
+
+    // Stop the presence beacon/scan to enter a clean peripheral-only state.
     stop_scanning();
-    // Do NOT call stop_advertising() here.
-    memcpy(peer_addr_, peer_addr, 6);
-    peer_addr_valid_ = true;
-    Serial.println("JOIN: host discovered, starting connect window");
-    sm_post_event(Event::EV_ROLE_RESOLVED);
+    stop_advertising();
+
+    // Guard delay: let the controller leave scan/advertise state before
+    // restarting connectable advertising. v0.2.0: 20 ms guard after stopping
+    // scan.
+    vTaskDelay(pdMS_TO_TICKS(HOST_STOP_SCAN_TO_ADV_GUARD_MS));
+
+    start_host_advertising();
+
+    // Continue scanning so we can detect a simultaneous peer Host and resolve
+    // the conflict by becoming Join (see definition.md conflict resolution).
+    start_scanning();
+
+    host_wait_start_ms_ = millis();
+    host_wait_timeout_posted_ = false;
 }
 
-void BleService::connect_to_host() {
-    if (role_ != Role::JOIN || !peer_addr_valid_) {
+void BleService::start_host_advertising() {
+    if (!initialized_) {
+        return;
+    }
+
+    if (ESP.getFreeHeap() < MIN_HEAP_FOR_BLE_ADV) {
+        Serial.println("ERROR: insufficient heap for host advertising");
+        do_stop_host_advertising();
         sm_post_event(Event::EV_ERROR);
         return;
     }
 
-    client_ = NimBLEDevice::createClient();
-    NimBLEClient* cli = client_ptr(client_);
-    if (!cli) {
+    if (!advertising_) {
+        advertising_ = NimBLEDevice::getAdvertising();
+    }
+    NimBLEAdvertising* adv = adv_ptr(advertising_);
+    if (!adv) {
+        return;
+    }
+
+    adv->addServiceUUID(RPS_SERVICE_UUID_STR);
+
+    // Continue to include the public MAC in manufacturer data so a Joiner can
+    // fall back to it if its controller reports a non-public address type.
+    char id[5];
+    get_device_id(id, sizeof(id));
+    std::string manu;
+    manu.push_back(static_cast<uint8_t>(PRESENCE_COMPANY_ID & 0xFF));
+    manu.push_back(static_cast<uint8_t>((PRESENCE_COMPANY_ID >> 8) & 0xFF));
+    manu.append(id);
+    manu.append(reinterpret_cast<const char*>(public_mac_), 6);
+    adv->setManufacturerData(manu);
+
+    adv->setMinInterval(HOST_ADV_MIN_INTERVAL);
+    adv->setMaxInterval(HOST_ADV_MAX_INTERVAL);
+    adv->start();
+}
+
+void BleService::do_stop_host_advertising() {
+    stop_advertising();
+    stop_scanning();
+    host_active_ = false;
+    host_wait_timeout_posted_ = false;
+}
+
+void BleService::do_restart_host_advertising() {
+    do_stop_host_advertising();
+    vTaskDelay(pdMS_TO_TICKS(HOST_STOP_SCAN_TO_ADV_GUARD_MS));
+    role_ = Role::HOST;
+    host_active_ = true;
+    start_host_advertising();
+    host_wait_start_ms_ = millis();
+    host_wait_timeout_posted_ = false;
+}
+
+// ---------------------------------------------------------------------------
+// Direct implementation: Join mode
+// ---------------------------------------------------------------------------
+
+void BleService::do_connect_to_host(const uint8_t host_public_mac[6]) {
+    if (!initialized_ || !host_public_mac) {
         sm_post_event(Event::EV_ERROR);
+        return;
+    }
+
+    role_ = Role::JOIN;
+    presence_active_ = false;
+    host_active_ = false;
+
+    // Stop our own beacon/scan before connecting as a central.
+    stop_scanning();
+    stop_advertising();
+
+    // Capture the peer public MAC for device-id display and fallback.
+    memcpy(peer_public_mac_, host_public_mac, 6);
+    peer_public_mac_valid_ = true;
+
+    NimBLEClient* cli = NimBLEDevice::createClient();
+    if (!cli) {
+        sm_post_event(Event::EV_CONNECT_FAILED);
         return;
     }
     cli->setClientCallbacks(new RpsClientCallbacks());
+    cli->setConnectTimeout(JOIN_CONNECT_TIMEOUT_SEC);
 
-    uint8_t addr_buf[6];
-    memcpy(addr_buf, peer_addr_, 6);
-    // Use the address type captured during discovery; reconstructing with
-    // BLE_ADDR_PUBLIC causes status=13 when the peer advertised a random or
-    // resolvable address. See docs/BugReport_CYD_RPS_v0.1.4.md §6.2 and §8.3.
-    NimBLEAddress addr(addr_buf, peer_addr_type_);
+    // Construct the Host address with BLE_ADDR_PUBLIC directly. Decision D08:
+    // do not reconstruct the address from getNative() with the wrong type.
+    uint8_t host_mac[6];
+    memcpy(host_mac, host_public_mac, 6);
+    NimBLEAddress addr(host_mac, BLE_ADDR_PUBLIC);
 
-    // Reduce the per-attempt connect timeout from the 30 s default so a
-    // connect failure surfaces quickly instead of blocking the radio task for
-    // the full default timeout. See docs/BugReport_CYD_RPS_v0.1.6.md §8.6 and
-    // docs/BugReport_CYD_RPS_v0.1.7.md §11.2.
-    cli->setConnectTimeout(kConnectTimeoutSeconds);
-
-    // The HOST may not yet have finished role resolution when the JOIN first
-    // tries to connect. Keep advertising for a bounded discovery window before
-    // each connect() attempt so the HOST can discover the JOIN and stop scanning
-    // (an ESP32 that is scanning cannot reliably accept a connection). Stop
-    // advertising immediately before connect() because the controller rejects a
-    // central connect attempt while we are also a peripheral advertiser. See
-    // docs/BugReport_CYD_RPS_v0.1.6.md §8.5, docs/BugReport_CYD_RPS_v0.1.7.md
-    // §9.1 and §9.2.
     bool connected = false;
-    for (int attempt = 0; attempt < kConnectRetries; ++attempt) {
-        if (attempt == 0) {
-            // Initial discovery window after role resolution: advertising is
-            // already running from become_join(); keep it running long enough
-            // for the peer to discover us and resolve to HOST.
-            Serial.println("BLE: initial discovery window before connect");
-            start_advertising();  // no-op if already active; ensures interval
-            vTaskDelay(pdMS_TO_TICKS(kJoinDiscoveryWindowMs));
-        } else {
-            // After a timeout failure the HOST may still be scanning. Restart
-            // advertising and give it another bounded discovery window before
-            // the next connect attempt.
-            Serial.printf("BLE: connect retry %d/%d - discovery window\n", attempt + 1, kConnectRetries);
-            start_advertising();
-            vTaskDelay(pdMS_TO_TICKS(kJoinConnectInterRetryWindowMs));
-        }
-        // The JOIN must stop advertising before acting as a central. The ESP32
-        // NimBLE controller rejects the connect attempt when the JOIN remains a
-        // peripheral advertiser while initiating a connection. See
-        // docs/BugReport_CYD_RPS_v0.1.6.md §8.5.
-        stop_advertising();
+    for (int attempt = 0; attempt < GameContext::kMaxJoinRetries; ++attempt) {
+        // Guard delay after stopping advertising before connect(). v0.2.0: 50 ms.
+        vTaskDelay(pdMS_TO_TICKS(STOP_ADV_TO_CONNECT_GUARD_MS));
 
-        // Advertising stop is not synchronous; wait for the controller to leave
-        // the advertiser state before issuing a central connect. Without this
-        // guard delay the controller may report the failure as
-        // BLE_ERR_REM_USER_CONN_TERM (status=13).
-        // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.2.
-        vTaskDelay(pdMS_TO_TICKS(50));
-
-        // Instrumentation: log before each connect attempt.
-        // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.1.
-        Serial.printf("JOIN: advertising stopped, connecting to %s\n",
-                      addr.toString().c_str());
+        Serial.printf("JOIN: connecting to %s (attempt %d/%d)\n",
+                      addr.toString().c_str(), attempt + 1, GameContext::kMaxJoinRetries);
 
         if (cli->connect(addr)) {
             connected = true;
             break;
         }
-        Serial.printf("BLE: connect attempt %d/%d failed\n", attempt + 1, kConnectRetries);
+
+        Serial.printf("JOIN: connect attempt %d/%d failed\n", attempt + 1, GameContext::kMaxJoinRetries);
     }
 
     if (!connected) {
         Serial.println("ERROR: BLE join connection failed after retries");
-        // Restart advertising so this unit remains discoverable if the state
-        // machine re-enters a discovery/negotiation cycle. See
-        // docs/BugReport_CYD_RPS_v0.1.6.md §8.6.
-        start_advertising();
         NimBLEDevice::deleteClient(cli);
         client_ = nullptr;
-        sm_post_event(Event::EV_ERROR);
+        sm_post_event(Event::EV_CONNECT_FAILED);
         return;
     }
+
+    client_ = cli;
 
     // Discover the remote move characteristic and subscribe to notifications.
     NimBLERemoteService* remote_service = cli->getService(RPS_SERVICE_UUID_STR);
@@ -566,11 +501,49 @@ void BleService::connect_to_host() {
         return;
     }
 
-    // The join-side link is fully usable now; announce the connection.
-    // (The onConnect callback is suppressed for JOIN until remote_char_ is set
-    // so that EV_CONNECTED is only posted after service discovery.)
     connected_ = true;
     sm_post_event(Event::EV_CONNECTED);
+}
+
+// ---------------------------------------------------------------------------
+// Discovery callback
+// ---------------------------------------------------------------------------
+
+void BleService::on_host_found(const uint8_t host_public_mac[6]) {
+    if (!host_public_mac) {
+        return;
+    }
+
+    // Self-discovery guard.
+    if (memcmp(public_mac_, host_public_mac, 6) == 0) {
+        return;
+    }
+
+    AppStateMachine& sm = sm_instance();
+
+    if (role_ == Role::HOST && host_active_) {
+        // We are hosting and see a peer Host advertisement. The device with the
+        // lower public MAC remains Host; the higher becomes Join.
+        if (memcmp(public_mac_, host_public_mac, 6) < 0) {
+            // Local MAC is lower: remain Host.
+            return;
+        }
+        // Local MAC is higher: become Join.
+        memcpy(peer_public_mac_, host_public_mac, 6);
+        peer_public_mac_valid_ = true;
+        memcpy(sm.ctx().host_mac, host_public_mac, 6);
+        sm.ctx().host_mac_valid = true;
+        sm.ctx().peer_host_seen = true;
+        sm_post_event(Event::EV_HOST_FOUND);
+        return;
+    }
+
+    // Normal Start-screen auto-join path.
+    memcpy(peer_public_mac_, host_public_mac, 6);
+    peer_public_mac_valid_ = true;
+    memcpy(sm.ctx().host_mac, host_public_mac, 6);
+    sm.ctx().host_mac_valid = true;
+    sm_post_event(Event::EV_HOST_FOUND);
 }
 
 // ---------------------------------------------------------------------------
@@ -579,14 +552,13 @@ void BleService::connect_to_host() {
 
 void BleService::on_connected() {
     connected_ = true;
-
-    // For the JOIN role we wait until service discovery and subscription are
-    // complete before posting EV_CONNECTED; that keeps the PUML Connecting
-    // state aligned with a usable link. For the HOST role the link is usable
-    // as soon as a central connects.
-    if (role_ == Role::HOST || (role_ == Role::JOIN && remote_char_ != nullptr)) {
+    if (role_ == Role::HOST) {
+        // For the Host, the link is usable as soon as a central connects.
         sm_post_event(Event::EV_CONNECTED);
     }
+    // For the JOIN role we wait until service discovery and subscription are
+    // complete before posting EV_CONNECTED; that keeps the Joining state aligned
+    // with a usable link. See do_connect_to_host().
 }
 
 void BleService::on_disconnected() {
@@ -616,7 +588,6 @@ bool BleService::send_move(Move move) {
     uint8_t byte = static_cast<uint8_t>(move);
 
     if (role_ == Role::HOST) {
-        // Peripheral: update local characteristic and notify the central.
         if (!move_char_) {
             return false;
         }
@@ -625,13 +596,26 @@ bool BleService::send_move(Move move) {
         ch->notify();
         return true;
     } else if (role_ == Role::JOIN) {
-        // Central: write directly to the peripheral characteristic.
         if (!remote_char_) {
             return false;
         }
         return remote_char_ptr(remote_char_)->writeValue(&byte, 1, false);
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// Disconnect
+// ---------------------------------------------------------------------------
+
+void BleService::disconnect() {
+    if (client_) {
+        client_ptr(client_)->disconnect();
+    }
+    if (server_) {
+        server_ptr(server_)->disconnect(0, 0);
+    }
+    connected_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -647,23 +631,25 @@ void BleService::radio_task_loop() {
     while (true) {
         RadioCommand cmd;
         if (xQueueReceive(radio_cmd_queue_, &cmd, portMAX_DELAY) == pdPASS) {
-            if (cmd == RadioCommand::START_DISCOVERY) {
-                do_start_discovery();
-                // Kick off deferred advertising immediately while still running
-                // on the dedicated task stack.
-                start_advertising_if_needed();
-            } else if (cmd == RadioCommand::STOP_DISCOVERY) {
-                do_stop_discovery();
-            } else if (cmd == RadioCommand::BECOME_HOST) {
-                // Resolve role (HOST/JOIN) and configure the radio accordingly.
-                // The actual NimBLE reconfiguration happens inside resolve_role(),
-                // become_host(), and become_join(), all running on this task stack.
-                resolve_role();
-            } else if (cmd == RadioCommand::CONNECT_TO_HOST) {
-                // Perform the full JOIN-side connection handshake on the dedicated
-                // task stack, including GATT service/characteristic discovery and
-                // subscription.
-                connect_to_host();
+            switch (cmd.type) {
+                case RadioCommandType::START_PRESENCE:
+                    do_start_presence_beacon();
+                    break;
+                case RadioCommandType::STOP_PRESENCE:
+                    do_stop_presence_beacon();
+                    break;
+                case RadioCommandType::STOP_HOST:
+                    do_stop_host_advertising();
+                    break;
+                case RadioCommandType::RESTART_HOST:
+                    do_restart_host_advertising();
+                    break;
+                case RadioCommandType::BECOME_HOST:
+                    do_become_host();
+                    break;
+                case RadioCommandType::CONNECT_TO_HOST:
+                    do_connect_to_host(cmd.mac);
+                    break;
             }
         }
     }
@@ -673,49 +659,75 @@ void BleService::radio_task_loop() {
 // Non-blocking periodic update (main task)
 // ---------------------------------------------------------------------------
 
-void BleService::update(uint32_t now_ms) {
-    // Discovery timeout only. All radio startup/advertising work has moved to
-    // the dedicated radio task to keep NimBLE off the Arduino loop stack.
-    post_peer_timeout_if_needed(now_ms);
+void BleService::update(uint32_t /*now_ms*/) {
+    // Host timeout event posting is driven by AppStateMachine::update() so the
+    // state machine remains the single owner of event dispatch timing. This
+    // hook is reserved for future non-blocking BLE housekeeping.
 }
 
-void BleService::post_peer_timeout_if_needed(uint32_t now_ms) {
-    if (!discovering_ || peer_timeout_posted_ || role_ != Role::NONE) {
+void BleService::post_host_timeout_if_needed(uint32_t now_ms) {
+    if (!host_active_ || host_wait_timeout_posted_) {
         return;
     }
-    if (now_ms - discovery_start_ms_ >= BleService::DISCOVERY_TIMEOUT_MS) {
-        peer_timeout_posted_ = true;
-        do_stop_discovery();
-        sm_post_event(Event::EV_PEER_TIMEOUT);
+    if (now_ms - host_wait_start_ms_ >= HOST_WAIT_TIMEOUT_MS) {
+        host_wait_timeout_posted_ = true;
+        sm_post_event(Event::EV_HOST_TIMEOUT);
     }
 }
 
-uint8_t BleService::discovery_remaining_seconds() const {
-    if (!discovering_ && !peer_timeout_posted_) {
-        return 0xFF;
-    }
-    uint32_t elapsed = millis() - discovery_start_ms_;
-    if (elapsed >= BleService::DISCOVERY_TIMEOUT_MS) {
+uint8_t BleService::host_wait_percent_remaining() const {
+    if (!host_active_ || host_wait_timeout_posted_) {
         return 0;
     }
-    return static_cast<uint8_t>((BleService::DISCOVERY_TIMEOUT_MS - elapsed + 999) / 1000);
+    uint32_t elapsed = millis() - host_wait_start_ms_;
+    if (elapsed >= HOST_WAIT_TIMEOUT_MS) {
+        return 0;
+    }
+    return static_cast<uint8_t>(((HOST_WAIT_TIMEOUT_MS - elapsed) * 100) / HOST_WAIT_TIMEOUT_MS);
 }
 
-void BleService::start_advertising_if_needed() {
-    if (!advertising_pending_ || !discovering_ || role_ != Role::NONE) {
+bool BleService::host_wait_timed_out() const {
+    if (!host_active_ || host_wait_timeout_posted_) {
+        return false;
+    }
+    return (millis() - host_wait_start_ms_) >= HOST_WAIT_TIMEOUT_MS;
+}
+
+void BleService::mark_host_wait_timeout_posted() {
+    host_wait_timeout_posted_ = true;
+}
+
+// ---------------------------------------------------------------------------
+// Device ID helpers
+// ---------------------------------------------------------------------------
+
+void BleService::get_device_id(char* out, size_t len) const {
+    if (!out || len < 5) {
         return;
     }
-    advertising_pending_ = false;
-    Serial.printf("BLE: start_advertising_if_needed heap=%u\n", ESP.getFreeHeap());
-    if (!start_advertising()) {
-        Serial.println("ERROR: BLE advertise start failed");
-        do_stop_discovery();
-        discovering_ = false;
-        sm_post_event(Event::EV_ERROR);
-    }
+    // Last two bytes of the public MAC rendered as four uppercase hex digits.
+    snprintf(out, len, "%02X%02X", public_mac_[4], public_mac_[5]);
 }
 
+void BleService::get_peer_device_id(char* out, size_t len) const {
+    if (!out || len < 5) {
+        return;
+    }
+    if (!peer_public_mac_valid_) {
+        out[0] = '\0';
+        return;
+    }
+    snprintf(out, len, "%02X%02X", peer_public_mac_[4], peer_public_mac_[5]);
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
 bool BleService::start_scanning() {
+    if (!initialized_) {
+        return false;
+    }
     if (!scan_) {
         scan_ = NimBLEDevice::getScan();
         NimBLEScan* scan = scan_ptr(scan_);
@@ -728,58 +740,6 @@ bool BleService::start_scanning() {
         scan->setWindow(50);
     }
     return scan_ptr(scan_)->start(0, nullptr, false);
-}
-
-bool BleService::start_advertising() {
-    Serial.printf("BLE: start_advertising heap=%u\n", ESP.getFreeHeap());
-
-    if (ESP.getFreeHeap() < MIN_HEAP_FOR_BLE_ADV) {
-        Serial.println("ERROR: insufficient heap for advertising");
-        return false;
-    }
-
-    if (!advertising_) {
-        advertising_ = NimBLEDevice::getAdvertising();
-        NimBLEAdvertising* adv = adv_ptr(advertising_);
-        if (!adv) {
-            return false;
-        }
-        adv->addServiceUUID(RPS_SERVICE_UUID_STR);
-
-        // Embed the local public MAC in the manufacturer-specific data so the
-        // peer can resolve roles using a stable, symmetric identifier instead
-        // of the random advertisement address. See
-        // docs/BugReport_CYD_RPS_v0.1.5.md §6.3 and §8.3.
-        std::vector<uint8_t> manu;
-        manu.push_back(static_cast<uint8_t>(kManufacturerCompanyId & 0xFF));
-        manu.push_back(static_cast<uint8_t>((kManufacturerCompanyId >> 8) & 0xFF));
-        const uint8_t* local = NimBLEDevice::getAddress().getNative();
-        manu.insert(manu.end(), local, local + 6);
-        adv->setManufacturerData(manu);
-    }
-    NimBLEAdvertising* adv = adv_ptr(advertising_);
-
-    // Use a short advertising interval during peer search / negotiation so the
-    // peer is more likely to hear us within each scan window and within the
-    // bounded discovery window. Only apply the interval when advertising is not
-    // already active: stopping an active advertisement to change parameters
-    // regenerates the random address and invalidates the address the peer
-    // captured during discovery. See docs/BugReport_CYD_RPS_v0.1.7.md §9.3 and
-    // docs/BugReport_CYD_RPS_v0.1.5.md §6.4.
-    if (!adv->isAdvertising()) {
-        if (discovering_ && role_ != Role::HOST) {
-            adv->setMinInterval(kPeerSearchAdvMinInterval);
-            adv->setMaxInterval(kPeerSearchAdvMaxInterval);
-        } else {
-            adv->setMinInterval(kNormalAdvMinInterval);
-            adv->setMaxInterval(kNormalAdvMaxInterval);
-        }
-    }
-
-    if (adv->isAdvertising()) {
-        return true;
-    }
-    return adv->start();
 }
 
 void BleService::stop_scanning() {
@@ -797,6 +757,9 @@ void BleService::stop_advertising() {
         if (adv->isAdvertising()) {
             adv->stop();
         }
+        // Clear the configured data so the next mode starts from a clean slate.
+        adv->removeServiceUUID(NimBLEUUID(RPS_SERVICE_UUID_STR));
+        adv->setManufacturerData(std::string());
     }
 }
 

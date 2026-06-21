@@ -13,13 +13,17 @@ namespace app {
 
 extern "C" {
     __attribute__((weak)) void ui_show_screen_start(void) {}
-    __attribute__((weak)) void ui_show_screen_peer_search(void) {}
+    __attribute__((weak)) void ui_show_screen_host_wait(void) {}
+    __attribute__((weak)) void ui_show_host_timeout_dialog(void) {}
+    __attribute__((weak)) void ui_hide_host_timeout_dialog(void) {}
     __attribute__((weak)) void ui_show_screen_gameplay(void) {}
-    __attribute__((weak)) void ui_show_screen_result(uint8_t /*local_move*/, uint8_t /*peer_move*/, uint8_t /*outcome*/) {}
+    __attribute__((weak)) void ui_show_screen_result(app::Move /*local_move*/, app::Move /*peer_move*/, app::Outcome /*outcome*/) {}
     __attribute__((weak)) void ui_show_screen_error(const char* /*msg*/) {}
     __attribute__((weak)) void ui_set_status(const char* /*text*/) {}
-    __attribute__((weak)) void ui_set_search_progress(uint8_t /*percent*/) {}
-    __attribute__((weak)) void ui_set_search_timeout(uint8_t /*seconds_remaining*/) {}
+    __attribute__((weak)) void ui_set_device_id(const char* /*id*/) {}
+    __attribute__((weak)) void ui_set_peer_device_id(const char* /*id*/) {}
+    __attribute__((weak)) void ui_set_score(uint16_t /*wins*/, uint16_t /*losses*/, uint16_t /*draws*/) {}
+    __attribute__((weak)) void ui_set_host_wait_progress(uint8_t /*percent*/) {}
     __attribute__((weak)) void ui_set_move_buttons_enabled(bool /*enabled*/) {}
 }
 
@@ -47,9 +51,6 @@ void app_init() {
     // kicks the state machine out of Boot. LL-034: no duplicate init calls.
     HalService& hal = hal_service();
 
-    // Route any initialization failure through the explicit error event so the
-    // Boot --> Error / Boot --> Halted transitions defined in state_machine.puml
-    // are exercised instead of silently setting flags and continuing.
     bool any_failed = hal.ble_init_failed() || hal.hw_init_failed();
     hal.mark_initialized(!any_failed);
 
@@ -97,31 +98,40 @@ void AppStateMachine::enqueue(Event ev) {
 }
 
 void AppStateMachine::update() {
-    // Drive BLE non-blocking state (discovery timeout only). Radio startup and
-    // advertising are handled by the dedicated BLE radio task so the NimBLE
-    // call tree does not share the Arduino main loop / LVGL stack.
+    // Drive BLE non-blocking state (host timeout, etc.).
     ble_service().update(millis());
 
-    // Start BLE discovery on the tick *after* the Play action was dispatched,
-    // so the NimBLE radio work never runs nested under lv_timer_handler().
-    if (ctx_.start_discovery_pending) {
-        ctx_.start_discovery_pending = false;
-        // Offload the actual scan/advertise start to the dedicated task. If the
-        // task is not running (e.g. Wokwi simulation) fall back to the direct
-        // path, which preserves the single-player fallback behavior.
-        if (ble_service().radio_task_ready()) {
-            ble_service().signal_discovery_start();
-        } else {
-            ble_service().start_discovery();
-        }
-    }
-
-    // Keep the PeerSearch timeout label in sync with the BLE discovery timer.
-    update_search_timeout_display();
+    // Keep the host-wait progress bar in sync with the BLE host timer.
+    update_host_wait_progress();
 
     // Dispatch any queued state-machine events.
     dispatch_pending();
 }
+
+namespace {
+
+const char* state_name(app::State state) {
+    switch (state) {
+        case app::State::Boot: return "Boot";
+        case app::State::Start: return "Start";
+        case app::State::HostWait: return "HostWait";
+        case app::State::HostTimeoutDialog: return "HostTimeoutDialog";
+        case app::State::Joining: return "Joining";
+        case app::State::Gameplay: return "Gameplay";
+        case app::State::Evaluating: return "Evaluating";
+        case app::State::Result: return "Result";
+        case app::State::Disconnected: return "Disconnected";
+        case app::State::Error: return "Error";
+        case app::State::Halted: return "Halted";
+    }
+    return "Unknown";
+}
+
+const char* game_mode_name(app::GameMode mode) {
+    return (mode == app::GameMode::SINGLE_PLAYER) ? "SINGLE_PLAYER" : "MULTI_PLAYER";
+}
+
+} // namespace
 
 void AppStateMachine::dispatch_pending() {
     while (true) {
@@ -133,7 +143,12 @@ void AppStateMachine::dispatch_pending() {
         Event ev = event_queue_[queue_head_];
         queue_head_ = (queue_head_ + 1) % EVENT_QUEUE_SIZE;
         unlock_queue();
+        State before = current();
         dispatch(ev, ctx_);
+        State after = current();
+        if (after != before) {
+            Serial.printf("STATE: %s\n", state_name(after));
+        }
     }
 }
 
@@ -149,21 +164,21 @@ void AppStateMachine::unlock_queue() {
     }
 }
 
-void AppStateMachine::update_search_timeout_display() {
-    if (current() != State::PeerSearch) {
-        displayed_search_timeout_ = 0xFF;
+void AppStateMachine::update_host_wait_progress() {
+    if (current() != State::HostWait) {
+        displayed_host_wait_progress_ = 0xFF;
         return;
     }
 
-    uint8_t remaining = ble_service().discovery_remaining_seconds();
-    if (remaining == 0xFF) {
-        // Discovery has not started yet (e.g. deferred start pending).
-        return;
+    uint8_t percent = ble_service().host_wait_percent_remaining();
+    if (percent != displayed_host_wait_progress_) {
+        displayed_host_wait_progress_ = percent;
+        ui_set_host_wait_progress(percent);
     }
 
-    if (remaining != displayed_search_timeout_) {
-        displayed_search_timeout_ = remaining;
-        ui_set_search_timeout(remaining);
+    if (ble_service().host_wait_timed_out()) {
+        ble_service().mark_host_wait_timeout_posted();
+        post_event(Event::EV_HOST_TIMEOUT);
     }
 }
 
@@ -187,12 +202,30 @@ bool AppStateMachine::guard_fatal(const Context& /*ctx*/) const {
     return hal_service().fatal();
 }
 
-bool AppStateMachine::guard_game_mode_eq_MODE_MULTI_PLAYER(const Context& /*ctx*/) const {
-    return ctx_.game_mode == GameMode::MULTI_PLAYER;
+bool AppStateMachine::guard_host_mac_valid(const Context& /*ctx*/) const {
+    return ctx_.host_mac_valid;
 }
 
-bool AppStateMachine::guard_game_mode_eq_MODE_SINGLE_PLAYER(const Context& /*ctx*/) const {
+bool AppStateMachine::guard_peer_host_seen(const Context& /*ctx*/) const {
+    return ctx_.peer_host_seen;
+}
+
+bool AppStateMachine::guard_retries_exhausted(const Context& /*ctx*/) const {
+    // The BLE service posts EV_CONNECT_FAILED once per failed attempt and
+    // finally gives up; this guard is kept for contract compatibility.
+    return true;
+}
+
+bool AppStateMachine::guard_mode_single(const Context& /*ctx*/) const {
     return ctx_.game_mode == GameMode::SINGLE_PLAYER;
+}
+
+bool AppStateMachine::guard_mode_multi_and_peer_move_received(const Context& /*ctx*/) const {
+    return ctx_.game_mode == GameMode::MULTI_PLAYER && ctx_.peer_move != Move::NONE;
+}
+
+bool AppStateMachine::guard_mode_multi_and_not_peer_move_received(const Context& /*ctx*/) const {
+    return ctx_.game_mode == GameMode::MULTI_PLAYER && ctx_.peer_move == Move::NONE;
 }
 
 bool AppStateMachine::guard_local_move_chosen(const Context& /*ctx*/) const {
@@ -203,33 +236,20 @@ bool AppStateMachine::guard_not_local_move_chosen(const Context& /*ctx*/) const 
     return ctx_.local_move == Move::NONE;
 }
 
-bool AppStateMachine::guard_peer_move_received(const Context& /*ctx*/) const {
-    return ctx_.peer_move != Move::NONE;
-}
-
-bool AppStateMachine::guard_not_peer_move_received(const Context& /*ctx*/) const {
-    return ctx_.peer_move == Move::NONE;
-}
-
-bool AppStateMachine::guard_role_host(const Context& /*ctx*/) const {
-    // The role is resolved by BleService before EV_ROLE_RESOLVED is posted,
-    // so the guard reads the runtime BLE role rather than the action-set
-    // GameContext field. This keeps the RoleNegotiating guards independent of
-    // the actions that record the role in the context.
-    return ble_service().role() == Role::HOST;
-}
-
-bool AppStateMachine::guard_role_join(const Context& /*ctx*/) const {
-    return ble_service().role() == Role::JOIN;
-}
-
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
 void AppStateMachine::app_init_success() {
+    char id[5] = {0};
+    ble_service().get_device_id(id, sizeof(id));
+    ui_set_device_id(id);
+
     ui_show_screen_start();
     ui_set_status("Ready");
+
+    // Begin broadcasting the presence beacon and scanning for Host advertisements.
+    ble_service().signal_start_presence_beacon();
 }
 
 void AppStateMachine::app_on_error() {
@@ -253,55 +273,110 @@ void AppStateMachine::show_error(const char* msg) {
         strncpy(ctx_.error_msg, msg, sizeof(ctx_.error_msg) - 1);
         ctx_.error_msg[sizeof(ctx_.error_msg) - 1] = '\0';
     }
+    displayed_host_wait_progress_ = 0xFF;
     ui_show_screen_error(ctx_.error_msg);
 }
 
-void AppStateMachine::on_play_button() {
-    ctx_.reset_game();
-    ui_show_screen_peer_search();
-    ui_set_status("Searching for peer...");
-    ui_set_search_progress(0);
-    displayed_search_timeout_ = 10;
-    ui_set_search_timeout(10);
-    // Defer the NimBLE radio work to the next update() tick, outside the
-    // LVGL timer / state-machine dispatch context.
-    ctx_.start_discovery_pending = true;
+void AppStateMachine::esp_restart() {
+    displayed_host_wait_progress_ = 0xFF;
+    ::ESP.restart();
 }
 
-void AppStateMachine::on_cancel_button() {
-    ble_service().stop_discovery();
+void AppStateMachine::on_host_game() {
     ctx_.reset_game();
+    ctx_.game_mode = GameMode::MULTI_PLAYER;
+    ctx_.role = Role::HOST;
+    ctx_.reset_round();
+
+    Serial.printf("MODE: %s\n", game_mode_name(ctx_.game_mode));
+
+    ui_show_screen_host_wait();
+    ui_set_status("Waiting for peer to join...");
+    ui_set_host_wait_progress(100);
+
+    // Stop the Start-screen presence beacon and become a Host advertiser.
+    ble_service().become_host();
+}
+
+void AppStateMachine::on_solo() {
+    ctx_.game_mode = GameMode::SINGLE_PLAYER;
+    ctx_.role = Role::NONE;
+    ctx_.reset_round();
+
+    Serial.printf("MODE: %s\n", game_mode_name(ctx_.game_mode));
+
+    ble_service().signal_stop_presence_beacon();
+    ui_show_screen_gameplay();
+    ui_set_status("Solo mode");
+    ui_set_move_buttons_enabled(true);
+}
+
+void AppStateMachine::on_cancel_host() {
+    ble_service().signal_stop_host_advertising();
+    ctx_.reset_game();
+
     ui_show_screen_start();
     ui_set_status("Cancelled");
+
+    // Return to presence beacon + scan.
+    ble_service().signal_start_presence_beacon();
 }
 
-void AppStateMachine::on_peer_found() {
-    ui_set_status("Negotiating role...");
-    // Offload role resolution to the dedicated BLE radio task so all post-
-    // discovery NimBLE work runs on the radio-task stack. The task compares the
-    // stored peer address with the local public address, configures the radio
-    // for HOST or JOIN, and posts EV_ROLE_RESOLVED or EV_ERROR.
-    ble_service().signal_become_host();
+void AppStateMachine::on_host_timeout() {
+    ui_show_host_timeout_dialog();
 }
 
-void AppStateMachine::start_advertising_host() {
-    ctx_.role = Role::HOST;
-    ui_set_status("Connecting...");
+void AppStateMachine::on_host_retry() {
+    ui_hide_host_timeout_dialog();
+    ctx_.reset_round();
+    ui_show_screen_host_wait();
+    ui_set_status("Waiting for peer to join...");
+    ui_set_host_wait_progress(100);
+    ble_service().signal_restart_host_advertising();
 }
 
-void AppStateMachine::start_scanning_join() {
+void AppStateMachine::on_host_solo() {
+    ui_hide_host_timeout_dialog();
+    on_solo();
+}
+
+void AppStateMachine::on_conflict_become_join() {
+    ble_service().signal_stop_presence_beacon();
+    ctx_.game_mode = GameMode::MULTI_PLAYER;
     ctx_.role = Role::JOIN;
-    ui_set_status("Connecting...");
-    // Offload the connection handshake to the dedicated BLE radio task so the
-    // NimBLE client/GATT call tree runs on the radio-task stack. The task posts
-    // EV_CONNECTED once the link is usable, or EV_ERROR on failure.
-    ble_service().signal_connect_to_host();
+    ctx_.reset_round();
+
+    Serial.printf("MODE: %s\n", game_mode_name(ctx_.game_mode));
+
+    ui_show_screen_gameplay();
+    ui_set_status("Joining host...");
+    ui_set_move_buttons_enabled(true);
+
+    if (ctx_.host_mac_valid) {
+        ble_service().signal_connect_to_host(ctx_.host_mac);
+    }
+}
+
+void AppStateMachine::on_join_failed() {
+    ble_service().signal_stop_presence_beacon();
+    ctx_.reset_game();
+    ui_show_screen_start();
+    ui_set_status("Join failed");
+    ble_service().signal_start_presence_beacon();
 }
 
 void AppStateMachine::on_peer_connected() {
-    ctx_.game_mode = GameMode::MULTI_PLAYER;
     ctx_.ble_connected = true;
     ctx_.reset_round();
+
+    Serial.printf("MODE: %s\n", game_mode_name(ctx_.game_mode));
+
+    char peer_id[5] = {0};
+    ble_service().get_peer_device_id(peer_id, sizeof(peer_id));
+    if (peer_id[0] != '\0') {
+        ui_set_peer_device_id(peer_id);
+    }
+
     ui_show_screen_gameplay();
     ui_set_status("Connected! Choose your move");
     ui_set_move_buttons_enabled(true);
@@ -311,16 +386,10 @@ void AppStateMachine::on_peer_disconnected() {
     ctx_.ble_connected = false;
     ctx_.role = Role::NONE;
     ble_service().disconnect();
+    ctx_.reset_game();
     ui_show_screen_start();
     ui_set_status("Peer disconnected");
-}
-
-void AppStateMachine::on_discovery_timeout() {
-    ctx_.game_mode = GameMode::SINGLE_PLAYER;
-    ctx_.reset_round();
-    ui_show_screen_gameplay();
-    ui_set_status("No peer found — single player");
-    ui_set_move_buttons_enabled(true);
+    ble_service().signal_start_presence_beacon();
 }
 
 // ---------------------------------------------------------------------------
@@ -377,7 +446,7 @@ void AppStateMachine::on_local_move_rock_pending() {
             ::app::app_on_error("Failed to send move");
             return;
         }
-        ui_set_status("Move sent — waiting for peer");
+        ui_set_status("Move sent - waiting for peer");
     }
 }
 
@@ -388,7 +457,7 @@ void AppStateMachine::on_local_move_paper_pending() {
             ::app::app_on_error("Failed to send move");
             return;
         }
-        ui_set_status("Move sent — waiting for peer");
+        ui_set_status("Move sent - waiting for peer");
     }
 }
 
@@ -399,12 +468,11 @@ void AppStateMachine::on_local_move_scissors_pending() {
             ::app::app_on_error("Failed to send move");
             return;
         }
-        ui_set_status("Move sent — waiting for peer");
+        ui_set_status("Move sent - waiting for peer");
     }
 }
 
 void AppStateMachine::on_peer_move_complete() {
-    // Peer move was stored by the BLE callback before posting the event.
     Move move = ble_service().peer_move();
     if (move != Move::NONE) {
         ctx_.peer_move = move;
@@ -417,7 +485,7 @@ void AppStateMachine::on_peer_move_pending() {
     if (move != Move::NONE) {
         ctx_.peer_move = move;
     }
-    ui_set_status("Peer chose — your turn");
+    ui_set_status("Peer chose - your turn");
 }
 
 void AppStateMachine::on_singleplayer_move_rock() {
@@ -443,10 +511,18 @@ void AppStateMachine::on_singleplayer_move_scissors() {
 // ---------------------------------------------------------------------------
 
 void AppStateMachine::evaluate_and_show_result() {
-    ui_show_screen_result(
-        static_cast<uint8_t>(ctx_.local_move),
-        static_cast<uint8_t>(ctx_.peer_move),
-        static_cast<uint8_t>(ctx_.outcome));
+    if (ctx_.outcome == Outcome::WIN) {
+        ctx_.score.wins++;
+    } else if (ctx_.outcome == Outcome::LOSE) {
+        ctx_.score.losses++;
+    } else if (ctx_.outcome == Outcome::DRAW) {
+        ctx_.score.draws++;
+    }
+
+    Serial.printf("SCORE: W%u L%u D%u\n", ctx_.score.wins, ctx_.score.losses, ctx_.score.draws);
+
+    ui_set_score(ctx_.score.wins, ctx_.score.losses, ctx_.score.draws);
+    ui_show_screen_result(ctx_.local_move, ctx_.peer_move, ctx_.outcome);
 }
 
 void AppStateMachine::start_new_round() {
@@ -459,9 +535,10 @@ void AppStateMachine::start_new_round() {
 void AppStateMachine::reset_and_return_start() {
     ctx_.reset_game();
     ble_service().disconnect();
-    ble_service().stop_discovery();
+    ble_service().signal_stop_host_advertising();
     ui_show_screen_start();
     ui_set_status("Ready");
+    ble_service().signal_start_presence_beacon();
 }
 
 } // namespace app

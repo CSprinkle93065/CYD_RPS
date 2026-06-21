@@ -1,19 +1,24 @@
 /**
  * @file theme.cpp
- * @brief Theme helpers for CYD_RPS screens.
+ * @brief Theme helpers for CYD_RPS v0.2.0.
+ *
+ * Background is pure black (#000000), primary text is white (#FFFFFF), and the
+ * accent color for pressed/active states is dark gray (#404040). Buttons render
+ * with a subtle white border on black; the pressed state uses the dark-gray
+ * accent.
  */
 
 #include "theme.h"
+#include "hal_config.h"
 
 namespace ui_theme {
 
-lv_color_t bg_dark(void)      { return lv_color_hex(0x1a1a1a); }
-lv_color_t text_primary(void) { return lv_color_white(); }
-lv_color_t text_secondary(void){ return lv_color_hex(0xaaaaaa); }
-lv_color_t accent_blue(void)  { return lv_color_hex(0x007acc); }
-lv_color_t accent_grey(void)  { return lv_color_hex(0x666666); }
-lv_color_t win_green(void)    { return lv_color_hex(0x00cc44); }
-lv_color_t lose_red(void)     { return lv_color_hex(0xff3333); }
+lv_color_t bg_black(void)      { return lv_color_hex(0x000000); }
+lv_color_t text_primary(void)  { return lv_color_white(); }
+lv_color_t text_secondary(void){ return lv_color_hex(0xAAAAAA); }
+lv_color_t accent_grey(void)   { return lv_color_hex(0x404040); }
+lv_color_t win_green(void)     { return lv_color_hex(0x00CC44); }
+lv_color_t lose_red(void)      { return lv_color_hex(0xFF3333); }
 
 static const lv_font_t* pick_font(uint8_t size)
 {
@@ -29,43 +34,49 @@ static const lv_font_t* pick_font(uint8_t size)
 
 void apply_screen_bg(lv_obj_t* screen)
 {
-    lv_obj_set_style_bg_color(screen, bg_dark(), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(screen, bg_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
 }
 
-void style_title_label(lv_obj_t* label, const char* text, uint8_t font_size)
+void style_title_label(lv_obj_t* label, const char* text)
 {
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, pick_font(font_size), LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, pick_font(24), LV_PART_MAIN);
     lv_obj_set_style_text_color(label, text_primary(), LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 0);
 }
 
 void style_body_label(lv_obj_t* label, const char* text)
 {
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, pick_font(16), LV_PART_MAIN);
     lv_obj_set_style_text_color(label, text_primary(), LV_PART_MAIN);
 }
 
 void style_status_label(lv_obj_t* label)
 {
     lv_label_set_text(label, "");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, pick_font(14), LV_PART_MAIN);
     lv_obj_set_style_text_color(label, text_secondary(), LV_PART_MAIN);
 }
 
-void style_timeout_label(lv_obj_t* label)
+void style_device_id_label(lv_obj_t* label)
 {
     lv_label_set_text(label, "");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, pick_font(14), LV_PART_MAIN);
     lv_obj_set_style_text_color(label, text_secondary(), LV_PART_MAIN);
+}
+
+void style_score_label(lv_obj_t* label)
+{
+    lv_label_set_text(label, "W:0 L:0 D:0");
+    lv_obj_set_style_text_font(label, pick_font(14), LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, text_primary(), LV_PART_MAIN);
 }
 
 void style_error_title(lv_obj_t* label)
 {
     lv_label_set_text(label, "Error");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, pick_font(24), LV_PART_MAIN);
     lv_obj_set_style_text_color(label, lose_red(), LV_PART_MAIN);
 }
 
@@ -74,26 +85,50 @@ void style_error_msg(lv_obj_t* label)
     lv_label_set_text(label, "");
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(label, 200);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, pick_font(14), LV_PART_MAIN);
     lv_obj_set_style_text_color(label, text_primary(), LV_PART_MAIN);
 }
 
-static void style_button(lv_obj_t* btn, lv_obj_t* label, const char* text, lv_color_t bg)
+static void style_button_common(lv_obj_t* btn, lv_coord_t radius)
 {
-    lv_obj_set_style_bg_color(btn, bg, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, text_primary(), LV_PART_MAIN);
-    lv_label_set_text(label, text);
-    lv_obj_center(label);
+    lv_obj_set_style_bg_color(btn, bg_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(btn, text_primary(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(btn, radius, LV_PART_MAIN);
+
+    // Pressed / active state uses the dark-gray accent.
+    lv_obj_set_style_bg_color(btn, accent_grey(), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_STATE_PRESSED);
 }
 
 void style_button_primary(lv_obj_t* btn, lv_obj_t* label, const char* text)
 {
-    style_button(btn, label, text, accent_blue());
+    style_button_common(btn, 8);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, pick_font(16), LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, text_primary(), LV_PART_MAIN);
+    lv_obj_center(label);
 }
 
-void style_button_grey(lv_obj_t* btn, lv_obj_t* label, const char* text)
+void style_button_secondary(lv_obj_t* btn, lv_obj_t* label, const char* text)
 {
-    style_button(btn, label, text, accent_grey());
+    style_button_common(btn, 8);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, pick_font(16), LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, text_primary(), LV_PART_MAIN);
+    lv_obj_center(label);
+}
+
+void style_home_button(lv_obj_t* btn, lv_obj_t* label)
+{
+    lv_obj_set_size(btn, 30, 30);
+    style_button_common(btn, 4);
+    lv_label_set_text(label, "\u2302"); // Unicode home icon
+    lv_obj_set_style_text_font(label, pick_font(16), LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, text_primary(), LV_PART_MAIN);
+    lv_obj_center(label);
 }
 
 void style_outcome_label(lv_obj_t* label, uint8_t outcome)
@@ -107,7 +142,7 @@ void style_outcome_label(lv_obj_t* label, uint8_t outcome)
         case 3: text = "DRAW"; color = text_primary(); break;
     }
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_32, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, pick_font(32), LV_PART_MAIN);
     lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
 }
 

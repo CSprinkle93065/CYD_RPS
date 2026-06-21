@@ -1,9 +1,9 @@
 # CYD_RPS — Release Context
 
 **Project:** CYD_RPS  
-**Version:** 0.1.9  
-**Workflow ID:** wvc_20260621_073822  
-**Revision Type:** bug_fix  
+**Version:** 0.2.0  
+**Workflow ID:** wvc_20260617_171607  
+**Revision Type:** minor_revision  
 **Release Date:** 2026-06-21  
 **Board Version:** CYD2USB_v3 (ESP32-2432S028R)  
 **Target Environment:** hardware  
@@ -12,22 +12,22 @@
 
 ---
 
-## Bug-Fix Summary
+## Minor-Revision Summary
 
-This release fixes the BLE connection-establishment race reported in `docs/BugReport_CYD_RPS_v0.1.8.md` §7.
+This release adds user-selected Host mode, BLE presence beacons, a white-on-black UI theme, persistent scoreboard, and a serial command parser to CYD_RPS.
 
-After v0.1.8 resolved the discovery half of the handshake, the JOIN still failed every `connect()` attempt with `status=13` (`BLE_ERR_REM_USER_CONN_TERM`). The remaining root causes were state-transition races on both sides: the JOIN called `connect()` immediately after `stop_advertising()` before the controller left the advertiser role, and the HOST continued using an advertisement started while scanning rather than restarting in a clean peripheral-only state.
+| Feature | Location | Details |
+|---------|----------|---------|
+| User-selected Host mode | `src/state_machine/app_state_machine.cpp`, `src/ui/screens.cpp` | Player can tap "Host Game" to enter `HostWait` and broadcast a BLE presence beacon while scanning for peers. |
+| BLE presence beacons & peer discovery | `src/state_machine/ble_service.cpp/h` | HOST broadcasts a connectable advertisement; JOIN scans and resolves role conflicts using public MAC address (lower MAC becomes HOST). |
+| White-on-black UI theme | `src/ui/theme.cpp/h`, `src/ui/screens.cpp` | Inverts previous dark-on-light scheme for improved readability on the CYD2USB display. |
+| Persistent scoreboard | `src/state_machine/app_state_machine.cpp`, `src/state_machine/game_logic.h` | Tracks wins, losses, and draws across multiple rounds; resets on boot. |
+| Serial command parser | `src/state_machine/serial_command_handler.cpp/h` | Recognizes `HOST`, `SOLO`, `ROCK`, `PAPER`, `SCISSORS`, `AGAIN`, `RESET`, `HOME`, and unknown/malformed commands; posts corresponding events to the state machine. |
+| Host timeout dialog | `src/state_machine/app_state_machine.cpp`, `src/ui/screens.cpp` | If no peer is found within ~15 s, a Retry/Solo dialog is shown. |
+| Home icon reset | `src/ui/screens.cpp`, `src/ui/touch_mapping.cpp/h` | A home icon in the top-right corner posts `EV_RESET` from any screen. |
+| State instrumentation | `src/state_machine/app_state_machine.cpp` | Emits `STATE:`, `MODE:`, and `SCORE:` markers over serial for QA observability. |
 
-| Fix | Location | Details |
-|-----|----------|---------|
-| Clear stale NimBLE bonds | `src/state_machine/ble_service.cpp` | `BleService::init()` calls `NimBLEDevice::deleteAllBonds()` (wrapped in `#ifndef WOKWI_SIMULATION`) before any discovery, eliminating stale IRK/bond records that could reject an incoming connection. |
-| Add handshake instrumentation | `src/state_machine/ble_service.cpp` | `Serial.printf`/`Serial.println` logs added in `on_peer_found()`, `resolve_role()`, `become_host()`, `become_join()`, and `connect_to_host()` so the two-board flow can be diagnosed from serial output. |
-| Restart HOST advertising after scan stop | `src/state_machine/ble_service.cpp` | `BleService::become_host()` stops scanning, stops advertising, waits `20 ms`, then restarts advertising, giving the HOST a clean peripheral-only connectable state. |
-| Guard delay before JOIN connect | `src/state_machine/ble_service.cpp` | `BleService::connect_to_host()` waits `50 ms` after `stop_advertising()` before each `NimBLEClient::connect()` attempt, removing the advertiser-teardown → central-connect race on the JOIN side. |
-| Correct `status=13` comment | `src/state_machine/ble_service.h` | The header comment now identifies `status=13` as `BLE_ERR_REM_USER_CONN_TERM` and references `docs/BugReport_CYD_RPS_v0.1.8.md` §7.1. |
-| Radio-task ownership preserved | `src/state_machine/ble_service.cpp` | All new `vTaskDelay()` calls run inside the dedicated BLE radio task command handlers, never on the LVGL/state-machine task. |
-
-This v0.1.9 fix preserves all v0.1.4–v0.1.8 fixes: GATT server start during `init()`, address-type capture in `peer_addr_type_`, dedicated BLE radio task, larger NimBLE host-task stack, heap guard, reduced LVGL memory, deferred discovery out of LVGL event context, thread-safe event queue, symmetric role negotiation using the public MAC, bounded JOIN discovery/retry windows, short peer-search advertising interval, stop-advertise-only-before-connect, and the `WOKWI_SIMULATION` guard.
+This v0.2.0 release preserves all v0.1.4–v0.1.9 fixes and infrastructure: GATT server start during `init()`, address-type capture, dedicated BLE radio task, larger NimBLE host-task stack, heap guard, reduced LVGL memory, deferred discovery, thread-safe event queue, symmetric role negotiation, bounded JOIN discovery/retry windows, short peer-search advertising interval, stop-advertise-only-before-connect, and the `WOKWI_SIMULATION` guard.
 
 ---
 
@@ -35,7 +35,7 @@ This v0.1.9 fix preserves all v0.1.4–v0.1.8 fixes: GATT server start during `i
 
 | Artifact | Path |
 |----------|------|
-| Release ZIP | `projects/CYD_RPS/dist/CYD_RPS_v0.1.9.zip` |
+| Release ZIP | `projects/CYD_RPS/dist/CYD_RPS_v0.2.0.zip` |
 | Firmware binary | `firmware.bin` (inside ZIP and at `projects/CYD_RPS/.pio/build/esp32-2432s028r_cyd2usb/firmware.bin`) |
 | Build configuration | `platformio.ini` (inside ZIP) |
 | Flash scripts | `flash_esptool.bat`, `flash_esptool.sh`, `flash_cyd_rps.bat` (inside ZIP) |
@@ -49,7 +49,7 @@ ZIP contents verified:
 - `flash_esptool.sh`
 - `flash_cyd_rps.bat`
 
-Firmware size: 977,584 bytes.
+Firmware size: 958,800 bytes.
 
 ---
 
@@ -88,6 +88,7 @@ After flashing, open the serial monitor at `115200` baud and reset the board. Yo
 ```text
 CYD_RPS setup start
 CYD_RPS setup done
+STATE: Start
 ```
 
 ---
@@ -98,9 +99,10 @@ CYD_RPS setup done
 |------------|---------|
 | BLE multiplayer requires physical hardware | NimBLE/BLE initialization is skipped under `WOKWI_SIMULATION` to avoid emulator watchdog issues. Multiplayer peer discovery, role negotiation, and peer move exchange require two physical CYD2USB v3 boards. |
 | Wokwi touch not simulated | The Wokwi CLI does not support the `wokwi-xpt2046` touch part (LL-032). Touch-driven flows are validated by code review and require physical hardware. |
-| Two-board connection verification is manual | The end-to-end two-board multiplayer connection flow must be verified manually because no CYD2USB board is detected on the host USB ports and Wokwi does not emulate NimBLE reliably. It is documented as manual verification in `docs/qa_results.md` §5.1. |
-| No score persistence | Round history and scores are RAM-only; they reset on every reboot. |
-| Host tests use a Python model | The 40 host state-machine tests execute a Python mirror of the generated C++ state machine because no host C++ compiler is available and the firmware depends on Arduino/LVGL/NimBLE. The model is derived directly from `src/state_machine/state_machine_generated.cpp` and `docs/state_machine.puml`. |
+| Two-board connection verification is manual | The end-to-end two-board multiplayer connection flow must be verified manually because no CYD2USB board is detected on the host USB ports and Wokwi does not emulate NimBLE reliably. It is documented as manual verification in `docs/qa_results.md` §4. |
+| Scoreboard is RAM-only | Round history and scores persist across rounds but reset on every reboot. |
+| Host tests use a Python model | The 73 host state-machine tests execute a Python mirror of the generated C++ state machine because no host C++ compiler is available and the firmware depends on Arduino/LVGL/NimBLE. The model is derived directly from `src/state_machine/state_machine_generated.cpp` and `docs/state_machine.puml`. |
+| Wokwi HOST path errors | In Wokwi, `do_become_host()` posts `EV_ERROR` because BLE is not initialized; the HOST timeout dialog cannot be reached in simulation. |
 
 ---
 
@@ -110,14 +112,13 @@ CYD_RPS setup done
 |------|--------|
 | Build (physical hardware environment) | PASS |
 | Build (Wokwi simulation environment) | PASS |
-| Host state-machine tests (40/40) | PASS |
-| Static analysis (`pio check`) | NOT EXECUTED — command exceeded 300 s timeout |
+| Host state-machine tests (73/73) | PASS |
 | Distribution ZIP complete | PASS |
-| Bug-fix code review (BLE connection-establishment race) | PASS |
 | Integration code review | PASS |
-| Wokwi smoke test | PASS |
-| Physical target tests | MANUAL / HARDWARE-ONLY — no board attached |
-| GitHub release | PASS — release `v0.1.9` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.9 with `firmware.bin` and `CYD_RPS_v0.1.9.zip` attached |
+| Wokwi smoke test | PASS (W07–W09 blocked by NimBLE limitation) |
+| Physical target tests | NOT EXECUTED — no board attached |
+| Manual touch/BLE verification procedures | DOCUMENTED |
+| GitHub release | PASS — release `v0.2.0` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.2.0 with `firmware.bin` and `CYD_RPS_v0.2.0.zip` attached |
 
 See `docs/qa_results.md` for the full QA report.
 
@@ -128,12 +129,33 @@ See `docs/qa_results.md` for the full QA report.
 **GitHub release created successfully.**
 
 - Repository: https://github.com/CSprinkle93065/CYD_RPS
-- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.9
-- Tag: `v0.1.9`
+- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.2.0
+- Tag: `v0.2.0`
 - Attachments:
   - `firmware.bin`
-  - `CYD_RPS_v0.1.9.zip`
+  - `CYD_RPS_v0.2.0.zip`
 - Local commit and tag were pushed to `origin/main`.
+
+---
+
+## Flash and RAM Usage Metrics
+
+### Physical-Hardware Environment (`esp32-2432s028r_cyd2usb`)
+
+| Metric | Used | Total | Percentage |
+|--------|------|-------|------------|
+| RAM | 76,140 bytes | 327,680 bytes | 23.2% |
+| Flash | 952,225 bytes | 1,310,720 bytes | 72.6% |
+
+**Partition Scheme:** `default.csv` (1.3 MB application partition)  
+**Partition-Fit Check:** PASS — firmware fits within the 1,310,720-byte application partition.
+
+### Wokwi Simulation Environment (`esp32-2432s028r_cyd2usb_wokwi`)
+
+| Metric | Used | Total | Percentage |
+|--------|------|-------|------------|
+| RAM | 68,752 bytes | 327,680 bytes | 21.0% |
+| Flash | 864,833 bytes | 1,310,720 bytes | 66.0% |
 
 ---
 
