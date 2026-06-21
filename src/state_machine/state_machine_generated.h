@@ -61,6 +61,7 @@ public:
     virtual bool guard_host_mac_valid(const Context& ctx) const = 0;
     virtual bool guard_hw_init_failed(const Context& ctx) const = 0;
     virtual bool guard_init_ok(const Context& ctx) const = 0;
+    virtual bool guard_local_mac_lower(const Context& ctx) const = 0;
     virtual bool guard_local_move_chosen(const Context& ctx) const = 0;
     virtual bool guard_mode_multi_and_not_peer_move_received(const Context& ctx) const = 0;
     virtual bool guard_mode_multi_and_peer_move_received(const Context& ctx) const = 0;
@@ -75,7 +76,6 @@ public:
     virtual void app_on_error_ble() = 0;
     virtual void app_on_error_fatal() = 0;
     virtual void app_on_error_hw() = 0;
-    virtual void esp_restart() = 0;
     virtual void evaluate_and_show_result() = 0;
     virtual void on_cancel_host() = 0;
     virtual void on_conflict_become_join() = 0;

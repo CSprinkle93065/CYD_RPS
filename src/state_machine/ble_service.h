@@ -1,6 +1,6 @@
 #pragma once
 
-// CYD_RPS v0.2.0 BLE service.
+// CYD_RPS v0.2.2 BLE service.
 //
 // Implements:
 //   - NimBLE stack initialization (call once from app_init).
@@ -18,10 +18,17 @@
 //   - Dedicated FreeRTOS radio task: all NimBLE operations run from a command
 //     queue.
 //
+// Address byte order (B01-1): all MACs in the firmware logic layer are stored
+// in canonical/display byte order. NimBLEAddress(uint8_t[6], type) internally
+// reverses to controller order, so passing canonical bytes produces the correct
+// link-layer address and avoids the double-reversal that caused status=13
+// (BLE_ERR_REM_USER_CONN_TERM).
+//
 // All NimBLE radio work runs on the dedicated task stack so that NimBLE's call
 // tree never shares the Arduino main loop / LVGL stack. BLE callbacks and the
 // state machine still post events through the thread-safe sm_post_event() path.
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 
@@ -125,6 +132,9 @@ public:
     void get_device_id(char* out, size_t len) const;
     void get_peer_device_id(char* out, size_t len) const;
 
+    // B01-1: expose the canonical public MAC for role-resolution guards.
+    const uint8_t* local_public_mac() const { return public_mac_; }
+
     // State accessors.
     bool is_initialized() const { return initialized_; }
     bool is_connected() const { return connected_; }
@@ -183,13 +193,17 @@ private:
     // state-machine action.
     Move pending_peer_move_ = Move::NONE;
 
-    // Addresses.
+    // Addresses (all stored in canonical/display byte order). B01-1.
     uint8_t public_mac_[6] = {0};
     uint8_t peer_public_mac_[6] = {0};
     bool peer_public_mac_valid_ = false;
     // B01 / LL-045: preserve the peer address type discovered during scanning
     // and use it verbatim in the connection call. 0xFF means "not captured".
     uint8_t peer_addr_type_ = 0xFF;
+
+    // B01-3: set by become_host() to force an in-progress JOIN connect() loop
+    // to abort before the state machine re-enters HostWait.
+    std::atomic<bool> abort_connect_{false};
 
     // NimBLE object handles (opaque to consumers).
     void* server_ = nullptr;

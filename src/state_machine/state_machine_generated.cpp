@@ -24,8 +24,8 @@ void StateMachine::dispatch(Event event, Context& ctx) {
             reset_and_return_start();
             state_ = State::Start;
         } else if (event == Event::EV_RESET) {
-            esp_restart();
-            state_ = State::Halted;
+            reset_and_return_start();
+            state_ = State::Start;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
@@ -36,8 +36,8 @@ void StateMachine::dispatch(Event event, Context& ctx) {
             reset_and_return_start();
             state_ = State::Start;
         } else if (event == Event::EV_RESET) {
-            esp_restart();
-            state_ = State::Halted;
+            reset_and_return_start();
+            state_ = State::Start;
         } else if (event == Event::EV_ERROR && guard_fatal(ctx)) {
             app_on_error_fatal();
             state_ = State::Halted;
@@ -48,8 +48,8 @@ void StateMachine::dispatch(Event event, Context& ctx) {
             evaluate_and_show_result();
             state_ = State::Result;
         } else if (event == Event::EV_RESET) {
-            esp_restart();
-            state_ = State::Halted;
+            reset_and_return_start();
+            state_ = State::Start;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
@@ -93,8 +93,8 @@ void StateMachine::dispatch(Event event, Context& ctx) {
             on_peer_disconnected();
             state_ = State::Disconnected;
         } else if (event == Event::EV_RESET) {
-            esp_restart();
-            state_ = State::Halted;
+            reset_and_return_start();
+            state_ = State::Start;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
@@ -113,8 +113,8 @@ void StateMachine::dispatch(Event event, Context& ctx) {
             on_cancel_host();
             state_ = State::Start;
         } else if (event == Event::EV_RESET) {
-            esp_restart();
-            state_ = State::Halted;
+            reset_and_return_start();
+            state_ = State::Start;
         }
         break;
     case State::HostWait:
@@ -131,8 +131,8 @@ void StateMachine::dispatch(Event event, Context& ctx) {
             on_cancel_host();
             state_ = State::Start;
         } else if (event == Event::EV_RESET) {
-            esp_restart();
-            state_ = State::Halted;
+            reset_and_return_start();
+            state_ = State::Start;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
@@ -145,9 +145,12 @@ void StateMachine::dispatch(Event event, Context& ctx) {
         } else if (event == Event::EV_CONNECT_FAILED && guard_retries_exhausted(ctx)) {
             on_join_failed();
             state_ = State::Start;
+        } else if (event == Event::EV_HOST_GAME) {
+            on_host_game();
+            state_ = State::HostWait;
         } else if (event == Event::EV_RESET) {
-            esp_restart();
-            state_ = State::Halted;
+            reset_and_return_start();
+            state_ = State::Start;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
@@ -161,20 +164,23 @@ void StateMachine::dispatch(Event event, Context& ctx) {
             on_peer_disconnected();
             state_ = State::Disconnected;
         } else if (event == Event::EV_RESET) {
-            esp_restart();
-            state_ = State::Halted;
+            reset_and_return_start();
+            state_ = State::Start;
         } else if (event == Event::EV_ERROR) {
             app_on_error();
             state_ = State::Error;
         }
         break;
     case State::Start:
-        if (event == Event::EV_HOST_GAME) {
+        if (event == Event::EV_HOST_FOUND && guard_local_mac_lower(ctx)) {
             on_host_game();
             state_ = State::HostWait;
         } else if (event == Event::EV_HOST_FOUND && guard_host_mac_valid(ctx)) {
             on_conflict_become_join();
             state_ = State::Joining;
+        } else if (event == Event::EV_HOST_GAME) {
+            on_host_game();
+            state_ = State::HostWait;
         } else if (event == Event::EV_SOLO) {
             on_solo();
             state_ = State::Gameplay;
@@ -182,8 +188,8 @@ void StateMachine::dispatch(Event event, Context& ctx) {
             app_on_error();
             state_ = State::Error;
         } else if (event == Event::EV_RESET) {
-            esp_restart();
-            state_ = State::Halted;
+            reset_and_return_start();
+            state_ = State::Start;
         }
         break;
     default:

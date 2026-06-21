@@ -1,6 +1,6 @@
 @startuml
 
-title CYD_RPS v0.2.0 State Machine
+title CYD_RPS v0.2.2 State Machine
 
 ' Initial pseudo-state (required by G5.1). No terminal [*] targets.
 [*] --> Boot
@@ -24,30 +24,35 @@ Boot --> Error : EV_ERROR [ble_init_failed] / app_on_error_ble()
 Boot --> Halted : EV_ERROR [hw_init_failed] / app_on_error_hw()
 
 ' ---------- Start ----------
-Start --> HostWait : EV_HOST_GAME / on_host_game()
+' B01-2: symmetric role resolution. The first matching EV_HOST_FOUND transition
+' wins; lower canonical public MAC becomes Host, otherwise Join.
+Start --> HostWait : EV_HOST_FOUND [local_mac_lower] / on_host_game()
 Start --> Joining : EV_HOST_FOUND [host_mac_valid] / on_conflict_become_join()
+Start --> HostWait : EV_HOST_GAME / on_host_game()
 Start --> Gameplay : EV_SOLO / on_solo()
 Start --> Error : EV_ERROR / app_on_error()
-Start --> Halted : EV_RESET / esp_restart()
+Start --> Start : EV_RESET / reset_and_return_start()
 
 ' ---------- Host wait / timeout ----------
 HostWait --> HostTimeoutDialog : EV_HOST_TIMEOUT / on_host_timeout()
 HostWait --> Joining : EV_HOST_FOUND [peer_host_seen] / on_conflict_become_join()
 HostWait --> Gameplay : EV_CONNECTED / on_peer_connected()
 HostWait --> Start : EV_CANCEL_HOST / on_cancel_host()
-HostWait --> Halted : EV_RESET / esp_restart()
+HostWait --> Start : EV_RESET / reset_and_return_start()
 HostWait --> Error : EV_ERROR / app_on_error()
 
 ' ---------- Host timeout dialog ----------
 HostTimeoutDialog --> HostWait : EV_HOST_RETRY / on_host_retry()
 HostTimeoutDialog --> Gameplay : EV_SOLO / on_host_solo()
 HostTimeoutDialog --> Start : EV_CANCEL_HOST / on_cancel_host()
-HostTimeoutDialog --> Halted : EV_RESET / esp_restart()
+HostTimeoutDialog --> Start : EV_RESET / reset_and_return_start()
 
 ' ---------- Peer auto-join ----------
+' B01-3: HOST serial command can override an in-progress join.
 Joining --> Gameplay : EV_CONNECTED / on_peer_connected()
 Joining --> Start : EV_CONNECT_FAILED [retries_exhausted] / on_join_failed()
-Joining --> Halted : EV_RESET / esp_restart()
+Joining --> HostWait : EV_HOST_GAME / on_host_game()
+Joining --> Start : EV_RESET / reset_and_return_start()
 Joining --> Error : EV_ERROR / app_on_error()
 
 ' ---------- Gameplay ----------
@@ -67,32 +72,33 @@ Gameplay --> Evaluating : EV_PEER_MOVE_RECEIVED [local_move_chosen] / on_peer_mo
 Gameplay --> Gameplay : EV_PEER_MOVE_RECEIVED [!local_move_chosen] / on_peer_move_pending()
 
 Gameplay --> Disconnected : EV_DISCONNECTED / on_peer_disconnected()
-Gameplay --> Halted : EV_RESET / esp_restart()
+Gameplay --> Start : EV_RESET / reset_and_return_start()
 Gameplay --> Error : EV_ERROR / app_on_error()
 
 ' ---------- Evaluation ----------
 Evaluating --> Result : EV_EVALUATE / evaluate_and_show_result()
-Evaluating --> Halted : EV_RESET / esp_restart()
+Evaluating --> Start : EV_RESET / reset_and_return_start()
 Evaluating --> Error : EV_ERROR / app_on_error()
 
 ' ---------- Result / new round ----------
 Result --> Gameplay : EV_PLAY_AGAIN / start_new_round()
 Result --> Disconnected : EV_DISCONNECTED / on_peer_disconnected()
-Result --> Halted : EV_RESET / esp_restart()
+Result --> Start : EV_RESET / reset_and_return_start()
 Result --> Error : EV_ERROR / app_on_error()
 
 ' ---------- Disconnected ----------
 Disconnected --> Start : EV_RETRY / reset_and_return_start()
-Disconnected --> Halted : EV_RESET / esp_restart()
+Disconnected --> Start : EV_RESET / reset_and_return_start()
 Disconnected --> Error : EV_ERROR / app_on_error()
 
 ' ---------- Error ----------
 Error --> Start : EV_RETRY / reset_and_return_start()
-Error --> Halted : EV_RESET / esp_restart()
+Error --> Start : EV_RESET / reset_and_return_start()
 Error --> Halted : EV_ERROR [fatal] / app_on_error_fatal()
 
 ' ---------- Halted ----------
-' Terminal leaf state; device reboots via EV_RESET before reaching here.
+' Terminal leaf state; reached only from Boot [hw_init_failed] or Error [fatal].
+' Halted is reachable only from Boot [hw_init_failed] and Error [fatal].
 
 ' ---------- UI-to-State contract note block (required by G5.1) ----------
 note as UIContract
@@ -104,7 +110,7 @@ note as UIContract
     - lblStatus       dynamic via ui_set_status()
     - btnHostGame     click -> post EV_HOST_GAME      -> Start --> HostWait
     - btnSolo         click -> post EV_SOLO           -> Start --> Gameplay
-    - btnHome         click -> post EV_RESET          -> ESP.restart()
+    - btnHome         click -> post EV_RESET          -> reset_and_return_start()
 
   SCR_HostWait:
     - lblTitle        static "Hosting Game"
@@ -112,7 +118,7 @@ note as UIContract
     - lblStatus       dynamic via ui_set_status()
     - barProgress     dynamic via ui_set_host_wait_progress()
     - btnCancel       click -> post EV_CANCEL_HOST    -> HostWait --> Start
-    - btnHome         click -> post EV_RESET          -> ESP.restart()
+    - btnHome         click -> post EV_RESET          -> reset_and_return_start()
 
   Host timeout dialog (over SCR_HostWait):
     - btnRetry        click -> post EV_HOST_RETRY     -> HostTimeoutDialog --> HostWait
@@ -125,7 +131,7 @@ note as UIContract
     - btnRock         click -> post EV_MOVE_ROCK
     - btnPaper        click -> post EV_MOVE_PAPER
     - btnScissors     click -> post EV_MOVE_SCISSORS
-    - btnHome         click -> post EV_RESET          -> ESP.restart()
+    - btnHome         click -> post EV_RESET          -> reset_and_return_start()
     - move buttons disabled by ui_set_move_buttons_enabled(false) after a move
 
   SCR_Result:
@@ -135,13 +141,13 @@ note as UIContract
     - lblPeerMove     set by ui_show_screen_result()
     - lblOutcome      set by ui_show_screen_result() (color per outcome)
     - btnPlayAgain    click -> post EV_PLAY_AGAIN     -> Result --> Gameplay
-    - btnHome         click -> post EV_RESET          -> ESP.restart()
+    - btnHome         click -> post EV_RESET          -> reset_and_return_start()
 
   SCR_Error:
     - lblErrorTitle   static "Error"
     - lblErrorMsg     dynamic via ui_show_screen_error()
     - btnRetry        click -> post EV_RETRY          -> Error --> Start
-    - btnHome         click -> post EV_RESET          -> ESP.restart()
+    - btnHome         click -> post EV_RESET          -> reset_and_return_start()
 
   Serial commands (post equivalent events):
     - HOST            -> EV_HOST_GAME
@@ -150,7 +156,7 @@ note as UIContract
     - PAPER           -> EV_MOVE_PAPER
     - SCISSORS        -> EV_MOVE_SCISSORS
     - AGAIN           -> EV_PLAY_AGAIN
-    - RESET/HOME      -> EV_RESET
+    - RESET/HOME      -> EV_RESET -> reset_and_return_start()
 end note
 
 @enduml

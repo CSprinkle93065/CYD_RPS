@@ -82,6 +82,7 @@ class Context:
         self.local_move_chosen = False
         self.peer_move_received = False
         self.retries_exhausted = False
+        self.local_mac_lower = False
 
 
 @dataclass
@@ -125,6 +126,9 @@ class StateMachineModel:
 
     def guard_host_mac_valid(self) -> bool:
         return self.ctx.host_mac_valid
+
+    def guard_local_mac_lower(self) -> bool:
+        return self.ctx.local_mac_lower
 
     def guard_peer_host_seen(self) -> bool:
         return self.ctx.peer_host_seen
@@ -255,12 +259,15 @@ class StateMachineModel:
                 self.app_on_error_hw()
                 self.state = State.Halted
         elif self.state == State.Start:
-            if event == Event.EV_HOST_GAME:
+            if event == Event.EV_HOST_FOUND and self.guard_local_mac_lower():
                 self.on_host_game()
                 self.state = State.HostWait
             elif event == Event.EV_HOST_FOUND and self.guard_host_mac_valid():
                 self.on_conflict_become_join()
                 self.state = State.Joining
+            elif event == Event.EV_HOST_GAME:
+                self.on_host_game()
+                self.state = State.HostWait
             elif event == Event.EV_SOLO:
                 self.on_solo()
                 self.state = State.Gameplay
@@ -268,8 +275,8 @@ class StateMachineModel:
                 self.app_on_error()
                 self.state = State.Error
             elif event == Event.EV_RESET:
-                self.esp_restart()
-                self.state = State.Halted
+                self.reset_and_return_start()
+                self.state = State.Start
         elif self.state == State.HostWait:
             if event == Event.EV_HOST_TIMEOUT:
                 self.on_host_timeout()
@@ -284,8 +291,8 @@ class StateMachineModel:
                 self.on_cancel_host()
                 self.state = State.Start
             elif event == Event.EV_RESET:
-                self.esp_restart()
-                self.state = State.Halted
+                self.reset_and_return_start()
+                self.state = State.Start
             elif event == Event.EV_ERROR:
                 self.app_on_error()
                 self.state = State.Error
@@ -300,8 +307,8 @@ class StateMachineModel:
                 self.on_cancel_host()
                 self.state = State.Start
             elif event == Event.EV_RESET:
-                self.esp_restart()
-                self.state = State.Halted
+                self.reset_and_return_start()
+                self.state = State.Start
         elif self.state == State.Joining:
             if event == Event.EV_CONNECTED:
                 self.on_peer_connected()
@@ -309,9 +316,12 @@ class StateMachineModel:
             elif event == Event.EV_CONNECT_FAILED and self.guard_retries_exhausted():
                 self.on_join_failed()
                 self.state = State.Start
+            elif event == Event.EV_HOST_GAME:
+                self.on_host_game()
+                self.state = State.HostWait
             elif event == Event.EV_RESET:
-                self.esp_restart()
-                self.state = State.Halted
+                self.reset_and_return_start()
+                self.state = State.Start
             elif event == Event.EV_ERROR:
                 self.app_on_error()
                 self.state = State.Error
@@ -353,8 +363,8 @@ class StateMachineModel:
                 self.on_peer_disconnected()
                 self.state = State.Disconnected
             elif event == Event.EV_RESET:
-                self.esp_restart()
-                self.state = State.Halted
+                self.reset_and_return_start()
+                self.state = State.Start
             elif event == Event.EV_ERROR:
                 self.app_on_error()
                 self.state = State.Error
@@ -363,8 +373,8 @@ class StateMachineModel:
                 self.evaluate_and_show_result()
                 self.state = State.Result
             elif event == Event.EV_RESET:
-                self.esp_restart()
-                self.state = State.Halted
+                self.reset_and_return_start()
+                self.state = State.Start
             elif event == Event.EV_ERROR:
                 self.app_on_error()
                 self.state = State.Error
@@ -376,8 +386,8 @@ class StateMachineModel:
                 self.on_peer_disconnected()
                 self.state = State.Disconnected
             elif event == Event.EV_RESET:
-                self.esp_restart()
-                self.state = State.Halted
+                self.reset_and_return_start()
+                self.state = State.Start
             elif event == Event.EV_ERROR:
                 self.app_on_error()
                 self.state = State.Error
@@ -386,8 +396,8 @@ class StateMachineModel:
                 self.reset_and_return_start()
                 self.state = State.Start
             elif event == Event.EV_RESET:
-                self.esp_restart()
-                self.state = State.Halted
+                self.reset_and_return_start()
+                self.state = State.Start
             elif event == Event.EV_ERROR:
                 self.app_on_error()
                 self.state = State.Error
@@ -396,8 +406,8 @@ class StateMachineModel:
                 self.reset_and_return_start()
                 self.state = State.Start
             elif event == Event.EV_RESET:
-                self.esp_restart()
-                self.state = State.Halted
+                self.reset_and_return_start()
+                self.state = State.Start
             elif event == Event.EV_ERROR and self.guard_fatal():
                 self.app_on_error_fatal()
                 self.state = State.Halted
@@ -470,6 +480,7 @@ def apply_guard_override(ctx: Context, action_text: str) -> None:
     ctx.local_move_chosen = False
     ctx.peer_move_received = False
     ctx.retries_exhausted = False
+    ctx.local_mac_lower = False
 
     if "init_ok" in text:
         ctx.init_ok = "returning true" in text
@@ -497,6 +508,8 @@ def apply_guard_override(ctx: Context, action_text: str) -> None:
         ctx.peer_move_received = not ("returning true" in text)
     if "retries_exhausted" in text:
         ctx.retries_exhausted = "returning true" in text
+    if "local_mac_lower" in text:
+        ctx.local_mac_lower = "returning true" in text
     # Serial-command move tests do not state a mode; default to single-player
     # so the round evaluates and reaches Evaluating.
     if "feed the string" in text and "rock" in text:
@@ -595,7 +608,7 @@ def run_test(test: dict) -> Tuple[bool, str]:
             Event.EV_MOVE_PAPER: "on_singleplayer_move_paper",
             Event.EV_MOVE_SCISSORS: "on_singleplayer_move_scissors",
             Event.EV_PLAY_AGAIN: "start_new_round",
-            Event.EV_RESET: "esp_restart",
+            Event.EV_RESET: "reset_and_return_start",
         }.get(event)
     if expected_action and expected_action not in trace.actions:
         return (

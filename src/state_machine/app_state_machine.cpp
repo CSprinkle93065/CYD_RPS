@@ -206,6 +206,16 @@ bool AppStateMachine::guard_host_mac_valid(const Context& /*ctx*/) const {
     return ctx_.host_mac_valid;
 }
 
+bool AppStateMachine::guard_local_mac_lower(const Context& /*ctx*/) const {
+    // B01-2: deterministic symmetric role resolution. The canonical public MAC
+    // is compared against the discovered Host MAC; the lower-MAC device becomes
+    // Host. The peer MAC was stored in ctx_.host_mac by the discovery callback.
+    if (!ctx_.host_mac_valid) {
+        return false;
+    }
+    return memcmp(ble_service().local_public_mac(), ctx_.host_mac, 6) < 0;
+}
+
 bool AppStateMachine::guard_peer_host_seen(const Context& /*ctx*/) const {
     return ctx_.peer_host_seen;
 }
@@ -275,11 +285,6 @@ void AppStateMachine::show_error(const char* msg) {
     }
     displayed_host_wait_progress_ = 0xFF;
     ui_show_screen_error(ctx_.error_msg);
-}
-
-void AppStateMachine::esp_restart() {
-    displayed_host_wait_progress_ = 0xFF;
-    ::ESP.restart();
 }
 
 void AppStateMachine::on_host_game() {

@@ -1,6 +1,6 @@
 #pragma once
 
-// CYD_RPS v0.2.0 concrete state-machine engine.
+// CYD_RPS v0.2.2 concrete state-machine engine.
 //
 // Derives from the generated StateMachine and implements every guard/action
 // hook. The engine owns the runtime GameContext, exposes event posting
@@ -37,6 +37,7 @@ public:
     bool guard_host_mac_valid(const Context& /*ctx*/) const override;
     bool guard_hw_init_failed(const Context& /*ctx*/) const override;
     bool guard_init_ok(const Context& /*ctx*/) const override;
+    bool guard_local_mac_lower(const Context& /*ctx*/) const override;
     bool guard_local_move_chosen(const Context& /*ctx*/) const override;
     bool guard_mode_multi_and_not_peer_move_received(const Context& /*ctx*/) const override;
     bool guard_mode_multi_and_peer_move_received(const Context& /*ctx*/) const override;
@@ -53,7 +54,6 @@ public:
     void app_on_error_ble() override;
     void app_on_error_fatal() override;
     void app_on_error_hw() override;
-    void esp_restart() override;
     void evaluate_and_show_result() override;
     void on_cancel_host() override;
     void on_conflict_become_join() override;

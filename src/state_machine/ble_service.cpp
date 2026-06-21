@@ -92,24 +92,29 @@ public:
             return;
         }
 
-        // B01: Extract the Host public MAC from the advertisement address when
-        // it is public; otherwise use the public MAC carried in the
-        // manufacturer-specific data.
+        // B01: Extract the Host public MAC in canonical/display byte order.
+        // When the address type is public, getNative() is reversed relative to
+        // the display form. When the type is not public, the stable public MAC
+        // is read from the manufacturer-specific beacon payload.
         NimBLEAddress addr = advertisedDevice->getAddress();
         uint8_t public_mac[6];
         bool public_mac_valid = false;
 
         if (addr.getType() == BLE_ADDR_PUBLIC) {
-            memcpy(public_mac, addr.getNative(), 6);
+            const uint8_t* native = addr.getNative();
+            for (int i = 0; i < 6; ++i) {
+                public_mac[i] = native[5 - i];
+            }
             public_mac_valid = true;
             Serial.printf("DISCOVERY: host seen via public addr %s (svc=%d beacon=%d)\n",
-                          addr.toString().c_str(), has_service_uuid, has_presence_beacon);
+                          NimBLEAddress(public_mac, BLE_ADDR_PUBLIC).toString().c_str(),
+                          has_service_uuid, has_presence_beacon);
         } else if (has_presence_beacon) {
             memcpy(public_mac, beacon_mac, 6);
             public_mac_valid = true;
             Serial.printf("DISCOVERY: host seen via beacon MAC %s (svc=%d beacon=%d type=%u)\n",
-                          addr.toString().c_str(), has_service_uuid, has_presence_beacon,
-                          addr.getType());
+                          NimBLEAddress(public_mac, BLE_ADDR_PUBLIC).toString().c_str(),
+                          has_service_uuid, has_presence_beacon, addr.getType());
         }
 
         if (public_mac_valid) {
@@ -163,8 +168,19 @@ bool BleService::init() {
     NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC);
 
     // Capture our public MAC for beacon/device-id generation.
+    // B01-1: NimBLEAddress::getNative() returns the internal (reversed) byte
+    // order, while NimBLEAddress(uint8_t[6], type) expects canonical/display
+    // order and reverses it internally. Store canonical bytes everywhere to
+    // avoid double-reversal when constructing connection addresses.
     NimBLEAddress local_addr = NimBLEDevice::getAddress();
-    memcpy(public_mac_, local_addr.getNative(), 6);
+    const uint8_t* native = local_addr.getNative();
+    for (int i = 0; i < 6; ++i) {
+        public_mac_[i] = native[5 - i];
+    }
+    uint8_t local_log_mac[6];
+    memcpy(local_log_mac, public_mac_, 6);
+    Serial.printf("BLE: local public MAC %s\n",
+                  NimBLEAddress(local_log_mac, BLE_ADDR_PUBLIC).toString().c_str());
 
     // Create the GATT server and move characteristic up-front so both roles
     // share the same attribute handle layout. LL-044: start the GATT server
@@ -266,6 +282,11 @@ void BleService::restart_host_advertising() {
 }
 
 void BleService::become_host() {
+    // B01-3: if a JOIN connect loop is running on the radio task, signal it to
+    // abort before we start hosting. The flag is cleared at the start of each
+    // do_connect_to_host() attempt.
+    abort_connect_ = true;
+
     if (radio_task_ready()) {
         RadioCommand cmd = {RadioCommandType::BECOME_HOST, {0}};
         xQueueSend(radio_cmd_queue_, &cmd, 0);
@@ -465,6 +486,9 @@ void BleService::do_connect_to_host(const uint8_t host_public_mac[6]) {
         return;
     }
 
+    // B01-3: clear any stale abort request, then reset role/connect state.
+    abort_connect_ = false;
+
     role_ = Role::JOIN;
     presence_active_ = false;
     host_active_ = false;
@@ -485,15 +509,23 @@ void BleService::do_connect_to_host(const uint8_t host_public_mac[6]) {
     cli->setClientCallbacks(new RpsClientCallbacks());
     cli->setConnectTimeout(JOIN_CONNECT_TIMEOUT_SEC);
 
-    // B01 / LL-045: construct the Host address using the public MAC and the
-    // address type discovered during scanning. Do not hard-code BLE_ADDR_PUBLIC.
-    uint8_t host_mac[6];
-    memcpy(host_mac, host_public_mac, 6);
+    // B01-1 / LL-045: host_public_mac is already in canonical/display order.
+    // NimBLEAddress(uint8_t[6], type) reverses to internal form, so passing
+    // canonical bytes yields the correct controller address. The constructor
+    // takes a non-const uint8_t[6], so copy the parameter first.
     uint8_t addr_type = (peer_addr_type_ != 0xFF) ? peer_addr_type_ : BLE_ADDR_PUBLIC;
-    NimBLEAddress addr(host_mac, addr_type);
+    uint8_t canonical_mac[6];
+    memcpy(canonical_mac, host_public_mac, 6);
+    NimBLEAddress addr(canonical_mac, addr_type);
 
     bool connected = false;
     for (int attempt = 0; attempt < GameContext::kMaxJoinRetries; ++attempt) {
+        // B01-3: a HOST command may request cancellation while we are joining.
+        if (abort_connect_) {
+            Serial.println("JOIN: connect aborted by HOST request");
+            break;
+        }
+
         // Guard delay after stopping advertising before connect(). v0.2.0: 50 ms.
         vTaskDelay(pdMS_TO_TICKS(STOP_ADV_TO_CONNECT_GUARD_MS));
 
@@ -506,13 +538,37 @@ void BleService::do_connect_to_host(const uint8_t host_public_mac[6]) {
         }
 
         Serial.printf("JOIN: connect attempt %d/%d failed\n", attempt + 1, GameContext::kMaxJoinRetries);
+
+        // B01-3: re-check abort after the failed attempt so we do not retry
+        // when the user has already requested Host mode.
+        if (abort_connect_) {
+            Serial.println("JOIN: connect aborted by HOST request after failed attempt");
+            break;
+        }
     }
 
     if (!connected) {
-        Serial.println("ERROR: BLE join connection failed after retries");
         NimBLEDevice::deleteClient(cli);
         client_ = nullptr;
+        if (abort_connect_) {
+            abort_connect_ = false;
+            Serial.println("JOIN: aborted connect cleaned up; no event posted");
+            return;
+        }
+        Serial.println("ERROR: BLE join connection failed after retries");
         sm_post_event(Event::EV_CONNECT_FAILED);
+        return;
+    }
+
+    // B01-3: re-check abort after a successful connect() in case the HOST
+    // command arrived while connect() was finishing. Discard the link and do
+    // not post EV_CONNECTED so the state machine stays in HostWait.
+    if (abort_connect_) {
+        abort_connect_ = false;
+        cli->disconnect();
+        NimBLEDevice::deleteClient(cli);
+        client_ = nullptr;
+        Serial.println("JOIN: connect succeeded but aborted by HOST request; no event posted");
         return;
     }
 
@@ -554,21 +610,22 @@ void BleService::on_host_found(const uint8_t host_public_mac[6], uint8_t addr_ty
         return;
     }
 
-    // Self-discovery guard.
+    // Self-discovery guard (both MACs are canonical).
     if (memcmp(public_mac_, host_public_mac, 6) == 0) {
         return;
     }
 
     AppStateMachine& sm = sm_instance();
 
-    Serial.printf("DISCOVERY: peer %02X:%02X:%02X:%02X:%02X:%02X type=%u\n",
-                  host_public_mac[0], host_public_mac[1], host_public_mac[2],
-                  host_public_mac[3], host_public_mac[4], host_public_mac[5],
+    uint8_t log_mac[6];
+    memcpy(log_mac, host_public_mac, 6);
+    Serial.printf("DISCOVERY: peer %s type=%u\n",
+                  NimBLEAddress(log_mac, BLE_ADDR_PUBLIC).toString().c_str(),
                   addr_type);
 
     if (role_ == Role::HOST && host_active_) {
         // We are hosting and see a peer Host advertisement. The device with the
-        // lower public MAC remains Host; the higher becomes Join.
+        // lower canonical public MAC remains Host; the higher becomes Join.
         if (memcmp(public_mac_, host_public_mac, 6) < 0) {
             // Local MAC is lower: remain Host.
             Serial.println("ROLE: local MAC lower, remain HOST");
@@ -586,8 +643,9 @@ void BleService::on_host_found(const uint8_t host_public_mac[6], uint8_t addr_ty
         return;
     }
 
-    // Normal Start-screen auto-join path.
-    Serial.println("ROLE: auto-join as JOIN");
+    // B01-2: Start-screen auto-negotiation. Record the discovered Host MAC and
+    // let the state machine decide Host vs Join via guard_local_mac_lower.
+    Serial.println("ROLE: peer discovered, state machine decides Host/Join");
     memcpy(peer_public_mac_, host_public_mac, 6);
     peer_public_mac_valid_ = true;
     peer_addr_type_ = addr_type;  // B01 / LL-045

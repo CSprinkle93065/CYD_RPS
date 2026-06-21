@@ -1,9 +1,9 @@
 {
   "metadata": {
-    "workflow_id": "wvc_20260617_171607",
+    "workflow_id": "wvc_20260621_164404",
     "project_name": "CYD_RPS",
-    "version": "0.2.0",
-    "revision_type": "minor_revision",
+    "version": "0.2.2",
+    "revision_type": "bug_fix",
     "board_version": "CYD2USB_v3",
     "target_environment": "hardware",
     "generated_at": "2026-06-21T15:10:02+08:00",
@@ -11,7 +11,7 @@
   },
   "state_machine_file": "docs/state_machine.puml",
   "notes": [
-    "v0.2.0 replaces automatic role negotiation with explicit Host selection and peer auto-join.",
+    "v0.2.2 fixes BLE MAC byte-order handling (B01-1), symmetric role resolution (B01-2), HOST override during join (B01-3), and HOME/RESET soft-reset behavior (U06).",
     "SCR_Gameplay is the visual screen for both multiplayer and single-player modes.",
     "SCR_Error is the visual screen for Error, Halted, and Disconnected states; the message text distinguishes them.",
     "Dynamic labels whose content depends on firmware state are updated through dedicated UI adapter functions called by the state machine or BLE service, not by integration glue (LL-041).",
@@ -29,8 +29,21 @@
       "ui_adapter_function": "ui_show_screen_start",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Start", "Disconnected"],
-        "hidden_in_states": ["Boot", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Error", "Halted"]
+        "visible_in_states": [
+          "Start",
+          "Disconnected"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -42,8 +55,21 @@
       "ui_adapter_function": "ui_set_device_id",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Start", "HostWait"],
-        "hidden_in_states": ["Boot", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Start",
+          "HostWait"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -51,12 +77,25 @@
       "screen": "SCR_Start",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_set_status() updates lblStatus with runtime status text (e.g., 'Ready', 'Searching for host...', 'Host found — joining...')",
+      "bound_state_machine_action": "ui_set_status() updates lblStatus with runtime status text (e.g., 'Ready', 'Searching for host...', 'Host found \u2014 joining...')",
       "ui_adapter_function": "ui_set_status",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Start", "HostWait", "Joining"],
-        "hidden_in_states": ["Boot", "HostTimeoutDialog", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Start",
+          "HostWait",
+          "Joining"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "HostTimeoutDialog",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -65,12 +104,40 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_host_game_button_clicked() -> post_event(EV_HOST_GAME)",
-      "transitions_driven": ["Start --> HostWait"],
+      "transitions_driven": [
+        "Start --> HostWait"
+      ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Start"],
-        "hidden_in_states": ["Boot", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
-        "enabled_in_states": ["Start"],
-        "disabled_in_states": ["Boot", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "visible_in_states": [
+          "Start"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
+        "enabled_in_states": [
+          "Start"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
         "enabled_guard": "Buttons are disabled while joining (host_mac_valid event pending) via ui_set_start_buttons_enabled(false)"
       }
     },
@@ -80,12 +147,40 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_solo_button_clicked() -> post_event(EV_SOLO)",
-      "transitions_driven": ["Start --> Gameplay"],
+      "transitions_driven": [
+        "Start --> Gameplay"
+      ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Start"],
-        "hidden_in_states": ["Boot", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
-        "enabled_in_states": ["Start"],
-        "disabled_in_states": ["Boot", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
+        "visible_in_states": [
+          "Start"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
+        "enabled_in_states": [
+          "Start"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
         "enabled_guard": "Buttons are disabled while joining via ui_set_start_buttons_enabled(false)"
       }
     },
@@ -95,12 +190,40 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_home_button_clicked() -> post_event(EV_RESET)",
-      "transitions_driven": ["Start --> Halted"],
+      "transitions_driven": [
+        "Start --> Start"
+      ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Start", "HostWait", "HostTimeoutDialog", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
-        "hidden_in_states": ["Boot", "Joining"],
-        "enabled_in_states": ["Start", "HostWait", "HostTimeoutDialog", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
-        "disabled_in_states": ["Boot", "Joining"]
+        "visible_in_states": [
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Joining"
+        ],
+        "enabled_in_states": [
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "Joining"
+        ]
       }
     },
     {
@@ -112,8 +235,21 @@
       "ui_adapter_function": "ui_show_screen_host_wait",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["HostWait", "HostTimeoutDialog"],
-        "hidden_in_states": ["Boot", "Start", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "HostWait",
+          "HostTimeoutDialog"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -125,8 +261,21 @@
       "ui_adapter_function": "ui_set_device_id",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["HostWait", "HostTimeoutDialog"],
-        "hidden_in_states": ["Boot", "Start", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "HostWait",
+          "HostTimeoutDialog"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -138,8 +287,21 @@
       "ui_adapter_function": "ui_set_status",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["HostWait", "HostTimeoutDialog"],
-        "hidden_in_states": ["Boot", "Start", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "HostWait",
+          "HostTimeoutDialog"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -151,8 +313,21 @@
       "ui_adapter_function": "ui_set_host_wait_progress",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["HostWait"],
-        "hidden_in_states": ["Boot", "Start", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "HostWait"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -161,12 +336,41 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_cancel_host_button_clicked() -> post_event(EV_CANCEL_HOST)",
-      "transitions_driven": ["HostWait --> Start", "HostTimeoutDialog --> Start"],
+      "transitions_driven": [
+        "HostWait --> Start",
+        "HostTimeoutDialog --> Start"
+      ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["HostWait"],
-        "hidden_in_states": ["Boot", "Start", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
-        "enabled_in_states": ["HostWait"],
-        "disabled_in_states": ["Boot", "Start", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "HostWait"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
+        "enabled_in_states": [
+          "HostWait"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "Start",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -175,12 +379,40 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_host_retry_button_clicked() -> post_event(EV_HOST_RETRY)",
-      "transitions_driven": ["HostTimeoutDialog --> HostWait"],
+      "transitions_driven": [
+        "HostTimeoutDialog --> HostWait"
+      ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["HostTimeoutDialog"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
-        "enabled_in_states": ["HostTimeoutDialog"],
-        "disabled_in_states": ["Boot", "Start", "HostWait", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "HostTimeoutDialog"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
+        "enabled_in_states": [
+          "HostTimeoutDialog"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -189,12 +421,40 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_host_solo_button_clicked() -> post_event(EV_SOLO)",
-      "transitions_driven": ["HostTimeoutDialog --> Gameplay"],
+      "transitions_driven": [
+        "HostTimeoutDialog --> Gameplay"
+      ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["HostTimeoutDialog"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
-        "enabled_in_states": ["HostTimeoutDialog"],
-        "disabled_in_states": ["Boot", "Start", "HostWait", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "HostTimeoutDialog"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
+        "enabled_in_states": [
+          "HostTimeoutDialog"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -206,8 +466,21 @@
       "ui_adapter_function": "ui_show_screen_gameplay",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "Evaluating"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Gameplay",
+          "Evaluating"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -219,8 +492,21 @@
       "ui_adapter_function": "ui_set_score",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "Evaluating", "Result"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Gameplay",
+          "Evaluating",
+          "Result"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -228,12 +514,25 @@
       "screen": "SCR_Gameplay",
       "lvgl_object_type": "lv_label",
       "event": null,
-      "bound_state_machine_action": "ui_set_status() updates lblStatus with 'Waiting for your move' or 'Peer chose — your turn'",
+      "bound_state_machine_action": "ui_set_status() updates lblStatus with 'Waiting for your move' or 'Peer chose \u2014 your turn'",
       "ui_adapter_function": "ui_set_status",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "Evaluating"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Result", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Gameplay",
+          "Evaluating"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -248,11 +547,37 @@
         "Gameplay --> Gameplay (multi-player, !peer_move_received)"
       ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "Evaluating"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Result", "Disconnected", "Error", "Halted"],
+        "visible_in_states": [
+          "Gameplay",
+          "Evaluating"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
         "enabled_rule": "enabled when local_move == MOVE_NONE; disabled by ui_set_move_buttons_enabled(false) after any move is chosen",
-        "enabled_in_states": ["Gameplay"],
-        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "enabled_in_states": [
+          "Gameplay"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -267,11 +592,37 @@
         "Gameplay --> Gameplay (multi-player, !peer_move_received)"
       ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "Evaluating"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Result", "Disconnected", "Error", "Halted"],
+        "visible_in_states": [
+          "Gameplay",
+          "Evaluating"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
         "enabled_rule": "enabled when local_move == MOVE_NONE; disabled by ui_set_move_buttons_enabled(false) after any move is chosen",
-        "enabled_in_states": ["Gameplay"],
-        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "enabled_in_states": [
+          "Gameplay"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -286,11 +637,37 @@
         "Gameplay --> Gameplay (multi-player, !peer_move_received)"
       ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "Evaluating"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Result", "Disconnected", "Error", "Halted"],
+        "visible_in_states": [
+          "Gameplay",
+          "Evaluating"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
         "enabled_rule": "enabled when local_move == MOVE_NONE; disabled by ui_set_move_buttons_enabled(false) after any move is chosen",
-        "enabled_in_states": ["Gameplay"],
-        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "enabled_in_states": [
+          "Gameplay"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -299,12 +676,44 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_home_button_clicked() -> post_event(EV_RESET)",
-      "transitions_driven": ["Gameplay --> Halted", "Evaluating --> Halted", "Result --> Halted", "Disconnected --> Halted", "Error --> Halted"],
+      "transitions_driven": [
+        "Gameplay --> Start",
+        "Evaluating --> Start",
+        "Result --> Start",
+        "Disconnected --> Start",
+        "Error --> Start"
+      ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining"],
-        "enabled_in_states": ["Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"],
-        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining"]
+        "visible_in_states": [
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining"
+        ],
+        "enabled_in_states": [
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining"
+        ]
       }
     },
     {
@@ -316,8 +725,21 @@
       "ui_adapter_function": "ui_show_screen_result",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Result"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -329,8 +751,21 @@
       "ui_adapter_function": "ui_set_score",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Result"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -342,8 +777,21 @@
       "ui_adapter_function": "ui_show_screen_result",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Result"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -355,8 +803,21 @@
       "ui_adapter_function": "ui_show_screen_result",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Result"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -368,8 +829,21 @@
       "ui_adapter_function": "ui_show_screen_result",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Result"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -378,12 +852,40 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_play_again_button_clicked() -> post_event(EV_PLAY_AGAIN)",
-      "transitions_driven": ["Result --> Gameplay"],
+      "transitions_driven": [
+        "Result --> Gameplay"
+      ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Result"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"],
-        "enabled_in_states": ["Result"],
-        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Disconnected", "Error", "Halted"]
+        "visible_in_states": [
+          "Result"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ],
+        "enabled_in_states": [
+          "Result"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -395,8 +897,21 @@
       "ui_adapter_function": "ui_show_screen_error",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Error", "Halted", "Disconnected"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result"]
+        "visible_in_states": [
+          "Error",
+          "Halted",
+          "Disconnected"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result"
+        ]
       }
     },
     {
@@ -408,8 +923,21 @@
       "ui_adapter_function": "ui_show_screen_error",
       "transitions_driven": [],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Error", "Halted", "Disconnected"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result"]
+        "visible_in_states": [
+          "Error",
+          "Halted",
+          "Disconnected"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result"
+        ]
       }
     },
     {
@@ -418,12 +946,41 @@
       "lvgl_object_type": "lv_btn",
       "event": "LV_EVENT_CLICKED",
       "bound_state_machine_action": "on_retry_button_clicked() -> post_event(EV_RETRY)",
-      "transitions_driven": ["Error --> Start", "Disconnected --> Start"],
+      "transitions_driven": [
+        "Error --> Start",
+        "Disconnected --> Start"
+      ],
       "enable_disable_visibility_rules": {
-        "visible_in_states": ["Error", "Disconnected"],
-        "hidden_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Halted"],
-        "enabled_in_states": ["Error", "Disconnected"],
-        "disabled_in_states": ["Boot", "Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Halted"]
+        "visible_in_states": [
+          "Error",
+          "Disconnected"
+        ],
+        "hidden_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Halted"
+        ],
+        "enabled_in_states": [
+          "Error",
+          "Disconnected"
+        ],
+        "disabled_in_states": [
+          "Boot",
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Halted"
+        ]
       }
     },
     {
@@ -432,9 +989,13 @@
       "input_type": "serial_command",
       "event": null,
       "bound_state_machine_action": "serial_command_dispatch() parses 'HOST' and posts EV_HOST_GAME",
-      "transitions_driven": ["Start --> HostWait"],
+      "transitions_driven": [
+        "Start --> HostWait"
+      ],
       "enable_disable_visibility_rules": {
-        "accepted_in_states": ["Start"]
+        "accepted_in_states": [
+          "Start"
+        ]
       }
     },
     {
@@ -443,9 +1004,15 @@
       "input_type": "serial_command",
       "event": null,
       "bound_state_machine_action": "serial_command_dispatch() parses 'SOLO' and posts EV_SOLO",
-      "transitions_driven": ["Start --> Gameplay", "HostTimeoutDialog --> Gameplay"],
+      "transitions_driven": [
+        "Start --> Gameplay",
+        "HostTimeoutDialog --> Gameplay"
+      ],
       "enable_disable_visibility_rules": {
-        "accepted_in_states": ["Start", "HostTimeoutDialog"]
+        "accepted_in_states": [
+          "Start",
+          "HostTimeoutDialog"
+        ]
       }
     },
     {
@@ -460,7 +1027,9 @@
         "Gameplay --> Gameplay (multi-player, !peer_move_received)"
       ],
       "enable_disable_visibility_rules": {
-        "accepted_in_states": ["Gameplay"]
+        "accepted_in_states": [
+          "Gameplay"
+        ]
       }
     },
     {
@@ -475,7 +1044,9 @@
         "Gameplay --> Gameplay (multi-player, !peer_move_received)"
       ],
       "enable_disable_visibility_rules": {
-        "accepted_in_states": ["Gameplay"]
+        "accepted_in_states": [
+          "Gameplay"
+        ]
       }
     },
     {
@@ -490,7 +1061,9 @@
         "Gameplay --> Gameplay (multi-player, !peer_move_received)"
       ],
       "enable_disable_visibility_rules": {
-        "accepted_in_states": ["Gameplay"]
+        "accepted_in_states": [
+          "Gameplay"
+        ]
       }
     },
     {
@@ -499,9 +1072,13 @@
       "input_type": "serial_command",
       "event": null,
       "bound_state_machine_action": "serial_command_dispatch() parses 'AGAIN' and posts EV_PLAY_AGAIN",
-      "transitions_driven": ["Result --> Gameplay"],
+      "transitions_driven": [
+        "Result --> Gameplay"
+      ],
       "enable_disable_visibility_rules": {
-        "accepted_in_states": ["Result"]
+        "accepted_in_states": [
+          "Result"
+        ]
       }
     },
     {
@@ -509,10 +1086,23 @@
       "screen": null,
       "input_type": "serial_command",
       "event": null,
-      "bound_state_machine_action": "serial_command_dispatch() parses 'RESET' or 'HOME' and posts EV_RESET",
-      "transitions_driven": ["Any --> Halted"],
+      "bound_state_machine_action": "serial_command_dispatch() parses 'RESET' or 'HOME' and posts EV_RESET -> reset_and_return_start()",
+      "transitions_driven": [
+        "Any --> Start"
+      ],
       "enable_disable_visibility_rules": {
-        "accepted_in_states": ["Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "accepted_in_states": [
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     },
     {
@@ -520,10 +1110,23 @@
       "screen": null,
       "input_type": "serial_command",
       "event": null,
-      "bound_state_machine_action": "serial_command_dispatch() parses 'RESET' or 'HOME' and posts EV_RESET",
-      "transitions_driven": ["Any --> Halted"],
+      "bound_state_machine_action": "serial_command_dispatch() parses 'RESET' or 'HOME' and posts EV_RESET -> reset_and_return_start()",
+      "transitions_driven": [
+        "Any --> Start"
+      ],
       "enable_disable_visibility_rules": {
-        "accepted_in_states": ["Start", "HostWait", "HostTimeoutDialog", "Joining", "Gameplay", "Evaluating", "Result", "Disconnected", "Error", "Halted"]
+        "accepted_in_states": [
+          "Start",
+          "HostWait",
+          "HostTimeoutDialog",
+          "Joining",
+          "Gameplay",
+          "Evaluating",
+          "Result",
+          "Disconnected",
+          "Error",
+          "Halted"
+        ]
       }
     }
   ]
