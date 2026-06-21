@@ -15,7 +15,7 @@ namespace ui_theme {
 
 lv_color_t bg_black(void)      { return lv_color_hex(0x000000); }
 lv_color_t text_primary(void)  { return lv_color_white(); }
-lv_color_t text_secondary(void){ return lv_color_hex(0xAAAAAA); }
+lv_color_t text_secondary(void){ return lv_color_white(); }  // U02: all text white
 lv_color_t accent_grey(void)   { return lv_color_hex(0x404040); }
 lv_color_t win_green(void)     { return lv_color_hex(0x00CC44); }
 lv_color_t lose_red(void)      { return lv_color_hex(0xFF3333); }
@@ -77,7 +77,7 @@ void style_error_title(lv_obj_t* label)
 {
     lv_label_set_text(label, "Error");
     lv_obj_set_style_text_font(label, pick_font(24), LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, lose_red(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, text_primary(), LV_PART_MAIN);  // U02: all text white
 }
 
 void style_error_msg(lv_obj_t* label)
@@ -134,16 +134,16 @@ void style_home_button(lv_obj_t* btn, lv_obj_t* label)
 void style_outcome_label(lv_obj_t* label, uint8_t outcome)
 {
     // outcome_t: OUTCOME_NONE=0, OUTCOME_WIN, OUTCOME_LOSE, OUTCOME_DRAW
-    lv_color_t color = text_primary();
+    // U02: all text rendered white; text still indicates the result.
     const char* text = "?";
     switch (outcome) {
-        case 1: text = "WIN";  color = win_green(); break;
-        case 2: text = "LOSE"; color = lose_red();  break;
-        case 3: text = "DRAW"; color = text_primary(); break;
+        case 1: text = "WIN";  break;
+        case 2: text = "LOSE"; break;
+        case 3: text = "DRAW"; break;
     }
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, pick_font(32), LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, text_primary(), LV_PART_MAIN);
 }
 
 } // namespace ui_theme

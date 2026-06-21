@@ -4,14 +4,16 @@
 //
 // Implements:
 //   - NimBLE stack initialization (call once from app_init).
-//   - Presence beacon on the Start screen (company ID 0xFF, 10-byte payload:
-//     4-char device ID + 6-byte public MAC).
+//   - Presence beacon on the Start screen (company ID 0x00FF, 12-byte
+//     manufacturer-specific payload: 4-char hex device ID + 6-byte public MAC).
+//     See B01 for why the beacon is used as a Host-discovery fallback.
 //   - User-selected Host mode: stop beacon/scan, set public address, create the
 //     RPS GATT service/characteristic, advertise RPS service on public MAC,
 //     and enforce a 15 s peer-join timeout.
-//   - Auto-Join mode: detect a Host advertisement, stop beacon/scan, and
-//     connect directly to the Host public MAC (BLE_ADDR_PUBLIC) with a 50 ms
-//     guard after stopping advertising.
+//   - Auto-Join mode: detect a Host advertisement (service UUID or
+//     manufacturer-data presence beacon; see B01), stop beacon/scan, and
+//     connect to the Host using the public MAC and the address type discovered
+//     during scanning (BLE_ADDR_PUBLIC is no longer hard-coded).
 //   - Move send/receive over a single custom GATT characteristic.
 //   - Dedicated FreeRTOS radio task: all NimBLE operations run from a command
 //     queue.
@@ -96,7 +98,9 @@ public:
     void signal_connect_to_host(const uint8_t host_public_mac[6]);
 
     // Called when a Host presence beacon is discovered while on Start.
-    void on_host_found(const uint8_t host_public_mac[6]);
+    // addr_type is the NimBLE address type reported by the scan callback and is
+    // preserved for the connection call (B01 / LL-045).
+    void on_host_found(const uint8_t host_public_mac[6], uint8_t addr_type);
 
     // Callbacks invoked from NimBLE server/client callbacks.
     void on_connected();
@@ -183,6 +187,9 @@ private:
     uint8_t public_mac_[6] = {0};
     uint8_t peer_public_mac_[6] = {0};
     bool peer_public_mac_valid_ = false;
+    // B01 / LL-045: preserve the peer address type discovered during scanning
+    // and use it verbatim in the connection call. 0xFF means "not captured".
+    uint8_t peer_addr_type_ = 0xFF;
 
     // NimBLE object handles (opaque to consumers).
     void* server_ = nullptr;

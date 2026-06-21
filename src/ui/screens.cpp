@@ -99,6 +99,11 @@ void create_host_wait_screen(void)
     lv_obj_set_size(s.barProgress, 180, 20);
     lv_obj_align(s.barProgress, LV_ALIGN_TOP_MID, 0, 160);
     lv_bar_set_value(s.barProgress, 100, LV_ANIM_OFF);
+    // U04: Host wait progress bar uses blue fill on a black background.
+    lv_obj_set_style_bg_color(s.barProgress, ui_theme::bg_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s.barProgress, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s.barProgress, lv_color_hex(0x0066FF), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(s.barProgress, LV_OPA_COVER, LV_PART_INDICATOR);
 
     s.btnCancel = make_button(s.scr, "Cancel", 120, 50,
                               on_cancel_host_button_clicked, false);
@@ -133,11 +138,12 @@ void create_host_timeout_dialog(void)
     ui_theme::style_body_label(d.lblTitle, "No peer joined");
     lv_obj_align(d.lblTitle, LV_ALIGN_TOP_MID, 0, 10);
 
-    d.btnRetry = make_button(d.panel, "Retry", 90, 45,
+    // U03: reduced button width so Retry and Solo fit side-by-side without overlap.
+    d.btnRetry = make_button(d.panel, "Retry", 85, 45,
                              on_host_retry_button_clicked, true);
     lv_obj_align(d.btnRetry, LV_ALIGN_BOTTOM_LEFT, 15, -15);
 
-    d.btnSolo = make_button(d.panel, "Solo", 90, 45,
+    d.btnSolo = make_button(d.panel, "Solo", 85, 45,
                             on_host_solo_button_clicked, true);
     lv_obj_align(d.btnSolo, LV_ALIGN_BOTTOM_RIGHT, -15, -15);
 }
@@ -154,7 +160,8 @@ void create_gameplay_screen(void)
 
     s.lblScore = lv_label_create(s.scr);
     ui_theme::style_score_label(s.lblScore);
-    lv_obj_align(s.lblScore, LV_ALIGN_TOP_LEFT, 10, 30);
+    // U01: scoreboard moved to bottom center so it no longer overlaps "Choose!".
+    lv_obj_align(s.lblScore, LV_ALIGN_BOTTOM_MID, 0, -20);
 
     s.lblStatus = lv_label_create(s.scr);
     ui_theme::style_status_label(s.lblStatus);
@@ -190,7 +197,8 @@ void create_result_screen(void)
 
     s.lblScore = lv_label_create(s.scr);
     ui_theme::style_score_label(s.lblScore);
-    lv_obj_align(s.lblScore, LV_ALIGN_TOP_LEFT, 10, 30);
+    // U01: scoreboard at bottom center, matching gameplay screen.
+    lv_obj_align(s.lblScore, LV_ALIGN_BOTTOM_MID, 0, -20);
 
     s.lblLocalMove = lv_label_create(s.scr);
     ui_theme::style_body_label(s.lblLocalMove, "You: -");
@@ -206,7 +214,8 @@ void create_result_screen(void)
 
     s.btnPlayAgain = make_button(s.scr, "Play Again", 160, 55,
                                  on_play_again_button_clicked, true);
-    lv_obj_align(s.btnPlayAgain, LV_ALIGN_TOP_MID, 0, 250);
+    // U01: Play Again moved up so it does not overlap the bottom-center scoreboard.
+    lv_obj_align(s.btnPlayAgain, LV_ALIGN_TOP_MID, 0, 200);
 
     s.btnHome = lv_btn_create(s.scr);
     ui_theme::style_home_button(s.btnHome, lv_label_create(s.btnHome));

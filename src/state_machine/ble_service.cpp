@@ -51,15 +51,50 @@ class RpsAdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 public:
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) override {
         static const NimBLEUUID service_uuid(RPS_SERVICE_UUID_STR);
-        if (!advertisedDevice->isAdvertisingService(service_uuid)) {
+
+        // B01: A 128-bit service UUID plus 12 bytes of manufacturer data can
+        // exceed the 31-byte BLE advertisement packet. NimBLE may place the UUID
+        // in the scan response, and with setDuplicateResults(false) onResult()
+        // can fire before the scan response is received. Accept a Host when
+        // either the RPS service UUID is present or the manufacturer data
+        // matches the known presence-beacon signature (company ID 0x00FF,
+        // 4-hex-digit device ID, 6-byte public MAC).
+        bool has_service_uuid = advertisedDevice->isAdvertisingService(service_uuid);
+        bool has_presence_beacon = false;
+        uint8_t beacon_mac[6] = {0};
+
+        const std::string manu = advertisedDevice->getManufacturerData();
+        if (manu.length() >= 12) {
+            uint16_t company_id =
+                static_cast<uint8_t>(manu[0]) |
+                (static_cast<uint8_t>(manu[1]) << 8);
+            if (company_id == BleService::PRESENCE_COMPANY_ID) {
+                // Validate the 4-character device ID is hexadecimal so we do not
+                // false-join on random 0xFF beacons.
+                bool device_id_hex = true;
+                for (size_t i = 0; i < 4; ++i) {
+                    char c = manu[2 + i];
+                    if (!((c >= '0' && c <= '9') ||
+                          (c >= 'A' && c <= 'F') ||
+                          (c >= 'a' && c <= 'f'))) {
+                        device_id_hex = false;
+                        break;
+                    }
+                }
+                if (device_id_hex) {
+                    has_presence_beacon = true;
+                    memcpy(beacon_mac, manu.data() + 2 + 4, 6);
+                }
+            }
+        }
+
+        if (!has_service_uuid && !has_presence_beacon) {
             return;
         }
 
-        // The Host advertises on its public MAC. Prefer the advertised address
-        // when it is public; otherwise fall back to the public MAC carried in
-        // the manufacturer-specific data. This satisfies Decision D08: connect
-        // to the Host public MAC directly with BLE_ADDR_PUBLIC instead of
-        // reconstructing an address from getNative() with the wrong type.
+        // B01: Extract the Host public MAC from the advertisement address when
+        // it is public; otherwise use the public MAC carried in the
+        // manufacturer-specific data.
         NimBLEAddress addr = advertisedDevice->getAddress();
         uint8_t public_mac[6];
         bool public_mac_valid = false;
@@ -67,18 +102,20 @@ public:
         if (addr.getType() == BLE_ADDR_PUBLIC) {
             memcpy(public_mac, addr.getNative(), 6);
             public_mac_valid = true;
-        } else {
-            const std::string manu = advertisedDevice->getManufacturerData();
-            if (manu.length() >= 12 &&
-                static_cast<uint8_t>(manu[0]) == (BleService::PRESENCE_COMPANY_ID & 0xFF) &&
-                static_cast<uint8_t>(manu[1]) == ((BleService::PRESENCE_COMPANY_ID >> 8) & 0xFF)) {
-                memcpy(public_mac, manu.data() + 2 + 4, 6);  // after 4-char device ID
-                public_mac_valid = true;
-            }
+            Serial.printf("DISCOVERY: host seen via public addr %s (svc=%d beacon=%d)\n",
+                          addr.toString().c_str(), has_service_uuid, has_presence_beacon);
+        } else if (has_presence_beacon) {
+            memcpy(public_mac, beacon_mac, 6);
+            public_mac_valid = true;
+            Serial.printf("DISCOVERY: host seen via beacon MAC %s (svc=%d beacon=%d type=%u)\n",
+                          addr.toString().c_str(), has_service_uuid, has_presence_beacon,
+                          addr.getType());
         }
 
         if (public_mac_valid) {
-            ble_service().on_host_found(public_mac);
+            // B01 / LL-045: pass the discovered address type through to the
+            // connection call verbatim; do not hard-code BLE_ADDR_PUBLIC.
+            ble_service().on_host_found(public_mac, addr.getType());
         }
     }
 };
@@ -271,6 +308,7 @@ void BleService::do_start_presence_beacon() {
     presence_active_ = true;
     host_active_ = false;
     peer_public_mac_valid_ = false;
+    peer_addr_type_ = 0xFF;
     memset(peer_public_mac_, 0, sizeof(peer_public_mac_));
 
     if (!start_scanning()) {
@@ -340,6 +378,7 @@ void BleService::do_become_host() {
     presence_active_ = false;
     host_active_ = true;
     peer_public_mac_valid_ = false;
+    peer_addr_type_ = 0xFF;
     memset(peer_public_mac_, 0, sizeof(peer_public_mac_));
 
     // Stop the presence beacon/scan to enter a clean peripheral-only state.
@@ -446,11 +485,12 @@ void BleService::do_connect_to_host(const uint8_t host_public_mac[6]) {
     cli->setClientCallbacks(new RpsClientCallbacks());
     cli->setConnectTimeout(JOIN_CONNECT_TIMEOUT_SEC);
 
-    // Construct the Host address with BLE_ADDR_PUBLIC directly. Decision D08:
-    // do not reconstruct the address from getNative() with the wrong type.
+    // B01 / LL-045: construct the Host address using the public MAC and the
+    // address type discovered during scanning. Do not hard-code BLE_ADDR_PUBLIC.
     uint8_t host_mac[6];
     memcpy(host_mac, host_public_mac, 6);
-    NimBLEAddress addr(host_mac, BLE_ADDR_PUBLIC);
+    uint8_t addr_type = (peer_addr_type_ != 0xFF) ? peer_addr_type_ : BLE_ADDR_PUBLIC;
+    NimBLEAddress addr(host_mac, addr_type);
 
     bool connected = false;
     for (int attempt = 0; attempt < GameContext::kMaxJoinRetries; ++attempt) {
@@ -509,7 +549,7 @@ void BleService::do_connect_to_host(const uint8_t host_public_mac[6]) {
 // Discovery callback
 // ---------------------------------------------------------------------------
 
-void BleService::on_host_found(const uint8_t host_public_mac[6]) {
+void BleService::on_host_found(const uint8_t host_public_mac[6], uint8_t addr_type) {
     if (!host_public_mac) {
         return;
     }
@@ -521,16 +561,24 @@ void BleService::on_host_found(const uint8_t host_public_mac[6]) {
 
     AppStateMachine& sm = sm_instance();
 
+    Serial.printf("DISCOVERY: peer %02X:%02X:%02X:%02X:%02X:%02X type=%u\n",
+                  host_public_mac[0], host_public_mac[1], host_public_mac[2],
+                  host_public_mac[3], host_public_mac[4], host_public_mac[5],
+                  addr_type);
+
     if (role_ == Role::HOST && host_active_) {
         // We are hosting and see a peer Host advertisement. The device with the
         // lower public MAC remains Host; the higher becomes Join.
         if (memcmp(public_mac_, host_public_mac, 6) < 0) {
             // Local MAC is lower: remain Host.
+            Serial.println("ROLE: local MAC lower, remain HOST");
             return;
         }
         // Local MAC is higher: become Join.
+        Serial.println("ROLE: local MAC higher, become JOIN");
         memcpy(peer_public_mac_, host_public_mac, 6);
         peer_public_mac_valid_ = true;
+        peer_addr_type_ = addr_type;  // B01 / LL-045
         memcpy(sm.ctx().host_mac, host_public_mac, 6);
         sm.ctx().host_mac_valid = true;
         sm.ctx().peer_host_seen = true;
@@ -539,8 +587,10 @@ void BleService::on_host_found(const uint8_t host_public_mac[6]) {
     }
 
     // Normal Start-screen auto-join path.
+    Serial.println("ROLE: auto-join as JOIN");
     memcpy(peer_public_mac_, host_public_mac, 6);
     peer_public_mac_valid_ = true;
+    peer_addr_type_ = addr_type;  // B01 / LL-045
     memcpy(sm.ctx().host_mac, host_public_mac, 6);
     sm.ctx().host_mac_valid = true;
     sm_post_event(Event::EV_HOST_FOUND);

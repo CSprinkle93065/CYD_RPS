@@ -1,9 +1,8 @@
-# Assessment: Stage 14 — Integration Code Critic (re-review)
+# Assessment: Stage 14 — Integration Code Critic
 
-**Workflow ID:** wvc_20260617_171607  
+**Workflow ID:** wvc_20260618_011606  
 **Project:** CYD_RPS  
-**Version:** 0.2.0  
-**Revision Type:** minor_revision  
+**Target Version:** 0.2.1  
 **Board:** CYD2USB v3 (ESP32-2432S028R)  
 **Review Date:** 2026-06-21
 
@@ -15,49 +14,45 @@
 
 - [PASS] **G14.1 — Integration Agent modified NO files owned by Display & Input or Firmware Logic agents.**
 
-  The Integration Agent owns `src/integration/*` and the top-level `src/main.cpp`. Working-tree changes attributable to the integration re-run are limited to those integration-owned files:
+  The Integration Agent owns `src/integration/*` and the top-level `src/main.cpp`. A `git diff` of those files relative to the v0.2.0 baseline is empty, confirming that the integration layer itself was not changed in this Stage 13 pass.
 
-  - `src/integration/integration.cpp`
-  - `src/integration/integration.h`
-  - `src/main.cpp`
-
-  No modifications were made by the Integration Agent to files under `src/ui/*` (Display & Input ownership) or `src/state_machine/*` (Firmware Logic ownership). The substantial changes observed in `src/ui/*` and `src/state_machine/*` are part of the v0.2.0 Display & Input / Firmware Logic agent deliverables and are outside the integration agent's scope.
+  The working-tree modifications in `src/ui/*` and `src/state_machine/*` are the Stage 9/11 Display & Input and Firmware Logic bug-fix outputs (U01–U05 and B01) that were already reviewed and approved by Stage 10 (`docs/ui_code_review.md`) and Stage 12 (`docs/state_machine_code_review.md`). They are not integration-agent modifications and therefore do not violate the ownership boundary.
 
 - [PASS] **G14.2 — All contract bindings are implemented.**
 
-  `docs/state_machine_contract.json` declares the v0.2.0 control bindings. All clickable controls post their assigned events, all state-driven UI adapter callbacks have strong implementations, and the serial command bindings are wired.
+  Every binding in `docs/state_machine_contract.json` is wired:
 
-  | Control / Adapter | Contract Action | Implementation |
-  |-------------------|-----------------|----------------|
-  | `btnHostGame` | `on_host_game_button_clicked() -> post_event(EV_HOST_GAME)` | `src/ui/ui.cpp:77-82` |
-  | `btnSolo` (SCR_Start) | `on_solo_button_clicked() -> post_event(EV_SOLO)` | `src/ui/ui.cpp:84-89` |
-  | `btnCancel` | `on_cancel_host_button_clicked() -> post_event(EV_CANCEL_HOST)` | `src/ui/ui.cpp:91-96` |
-  | `btnRetry` (HostTimeoutDialog) | `on_host_retry_button_clicked() -> post_event(EV_HOST_RETRY)` | `src/ui/ui.cpp:98-103` |
-  | `btnSolo` (HostTimeoutDialog) | `on_host_solo_button_clicked() -> post_event(EV_SOLO)` | `src/ui/ui.cpp:105-110` |
-  | `btnRock` | `on_rock_button_clicked() -> post_event(EV_MOVE_ROCK)` | `src/ui/ui.cpp:112-117` |
-  | `btnPaper` | `on_paper_button_clicked() -> post_event(EV_MOVE_PAPER)` | `src/ui/ui.cpp:119-124` |
-  | `btnScissors` | `on_scissors_button_clicked() -> post_event(EV_MOVE_SCISSORS)` | `src/ui/ui.cpp:126-131` |
-  | `btnPlayAgain` | `on_play_again_button_clicked() -> post_event(EV_PLAY_AGAIN)` | `src/ui/ui.cpp:133-138` |
-  | `btnRetry` (SCR_Error) | `on_retry_button_clicked() -> post_event(EV_RETRY)` | `src/ui/ui.cpp:140-145` |
-  | `btnHome` | `on_home_button_clicked() -> post_event(EV_RESET)` | `src/ui/ui.cpp:147-152` |
-  | Screen transitions | `ui_show_screen_*()` family | `src/ui/ui.cpp:203-267` |
-  | `lblStatus` | `ui_set_status()` | `src/ui/ui.cpp:269-277` |
-  | `lblDeviceId` | `ui_set_device_id()` | `src/ui/ui.cpp:279-286` |
-  | `lblScore` | `ui_set_score()` | `src/ui/ui.cpp:294-300` |
-  | `barProgress` | `ui_set_host_wait_progress()` | `src/ui/ui.cpp:302-309` |
-  | Move buttons | `ui_set_move_buttons_enabled()` | `src/ui/ui.cpp:311-323` |
-  | `serial_HOST` | `serial_command_dispatch() -> EV_HOST_GAME` | `src/state_machine/serial_command_handler.cpp:91-92` |
-  | `serial_SOLO` | `serial_command_dispatch() -> EV_SOLO` | `src/state_machine/serial_command_handler.cpp:93-94` |
-  | `serial_ROCK` | `serial_command_dispatch() -> EV_MOVE_ROCK` | `src/state_machine/serial_command_handler.cpp:95-96` |
-  | `serial_PAPER` | `serial_command_dispatch() -> EV_MOVE_PAPER` | `src/state_machine/serial_command_handler.cpp:97-98` |
-  | `serial_SCISSORS` | `serial_command_dispatch() -> EV_MOVE_SCISSORS` | `src/state_machine/serial_command_handler.cpp:99-100` |
-  | `serial_AGAIN` | `serial_command_dispatch() -> EV_PLAY_AGAIN` | `src/state_machine/serial_command_handler.cpp:101-102` |
-  | `serial_RESET` / `serial_HOME` | `serial_command_dispatch() -> EV_RESET` | `src/state_machine/serial_command_handler.cpp:103-104` |
+  | Contract control / adapter | Required event / adapter call | Implementation location |
+  |----------------------------|-------------------------------|--------------------------|
+  | `btnHostGame` | `post_event(EV_HOST_GAME)` | `src/ui/ui.cpp:85-90` |
+  | `btnSolo` (SCR_Start) | `post_event(EV_SOLO)` | `src/ui/ui.cpp:92-97` |
+  | `btnCancel` | `post_event(EV_CANCEL_HOST)` | `src/ui/ui.cpp:99-104` |
+  | `btnRetry` (HostTimeoutDialog) | `post_event(EV_HOST_RETRY)` | `src/ui/ui.cpp:106-111` |
+  | `btnSolo` (HostTimeoutDialog) | `post_event(EV_SOLO)` | `src/ui/ui.cpp:113-118` |
+  | `btnRock` | `post_event(EV_MOVE_ROCK)` | `src/ui/ui.cpp:120-125` |
+  | `btnPaper` | `post_event(EV_MOVE_PAPER)` | `src/ui/ui.cpp:127-132` |
+  | `btnScissors` | `post_event(EV_MOVE_SCISSORS)` | `src/ui/ui.cpp:134-139` |
+  | `btnPlayAgain` | `post_event(EV_PLAY_AGAIN)` | `src/ui/ui.cpp:141-146` |
+  | `btnRetry` (SCR_Error) | `post_event(EV_RETRY)` | `src/ui/ui.cpp:148-153` |
+  | `btnHome` | `post_event(EV_RESET)` | `src/ui/ui.cpp:155-160` |
+  | Screen transitions | `ui_show_screen_*()` | `src/ui/ui.cpp:211-278` |
+  | `lblStatus` | `ui_set_status()` | `src/ui/ui.cpp:280-288` |
+  | `lblDeviceId` | `ui_set_device_id()` | `src/ui/ui.cpp:290-297` |
+  | `lblScore` | `ui_set_score()` | `src/ui/ui.cpp:305-316` |
+  | `barProgress` | `ui_set_host_wait_progress()` | `src/ui/ui.cpp:318-325` (called from `AppStateMachine::update_host_wait_progress()`) |
+  | Move buttons | `ui_set_move_buttons_enabled()` | `src/ui/ui.cpp:327-339` |
+  | `serial_HOST` | `EV_HOST_GAME` | `src/state_machine/serial_command_handler.cpp:91-92` |
+  | `serial_SOLO` | `EV_SOLO` | `src/state_machine/serial_command_handler.cpp:93-94` |
+  | `serial_ROCK` | `EV_MOVE_ROCK` | `src/state_machine/serial_command_handler.cpp:95-96` |
+  | `serial_PAPER` | `EV_MOVE_PAPER` | `src/state_machine/serial_command_handler.cpp:97-98` |
+  | `serial_SCISSORS` | `EV_MOVE_SCISSORS` | `src/state_machine/serial_command_handler.cpp:99-100` |
+  | `serial_AGAIN` | `EV_PLAY_AGAIN` | `src/state_machine/serial_command_handler.cpp:101-102` |
+  | `serial_RESET` / `serial_HOME` | `EV_RESET` | `src/state_machine/serial_command_handler.cpp:103-104` |
 
-  The integration layer provides the single forwarding callback:
+  The integration glue registers one forwarder and one periodic hook:
 
   ```cpp
-  // src/integration/integration.cpp:32-40
+  // src/integration/integration.cpp:32-45
   static void on_ui_event(app::Event event)
   {
       app::sm_post_event(event);
@@ -67,35 +62,31 @@
   {
       ui_register_event_post_callback(on_ui_event);
   }
-  ```
 
-  `ui_register_event_post_callback()` is the sole registration point. The dynamic `barProgress` countdown is driven by Firmware Logic (`AppStateMachine::update_host_wait_progress()` calling the weak `ui_set_host_wait_progress()` adapter), so the binding is satisfied without adding business logic to the glue layer.
+  void integration_update(void)
+  {
+      app::sm_instance().update();
+  }
+  ```
 
 - [PASS] **G14.3 — No new business logic was introduced in integration code.**
 
-  `src/integration/integration.cpp` contains only:
-
-  - `on_ui_event()` — forwards an LVGL event to `app::sm_post_event()`.
-  - `integration_init()` — registers the forwarder.
-  - `integration_update()` — calls `app::sm_instance().update()`.
-
-  `src/main.cpp` contains only hardware initialization, subsystem wiring, BLE init ordering, the `setup()` sequence, and the `loop()` task schedule. No game rules, move evaluation, BLE role negotiation, scoring, timeout computation, address-type handling, connection retry logic, manufacturer-data encoding, or state-transition decisions are present in either file.
+  `src/integration/integration.cpp` contains only event forwarding and the state-machine update call. `src/main.cpp` contains only the single-owner hardware initialization sequence, subsystem wiring, BLE init ordering, the `setup()` flow, and the `loop()` schedule. Neither file implements game rules, move evaluation, scoring, BLE role negotiation, connection retry logic, timeout computation, manufacturer-data parsing, or state-transition decisions.
 
 - [PASS] **G14.4 — Thread/task safety is maintained between LVGL task, state-machine task, and hardware ISRs.**
 
-  - LVGL runs in the Arduino `loop()` task. `ui_handler()` (which calls `lv_timer_handler()`) is called first; its input-device read callbacks and button-click event handlers execute in that task context.
-  - The button-click handlers (`src/ui/ui.cpp:77-152`) call `post_event()`, which invokes the integration-registered callback and ultimately `app::sm_post_event()`.
-  - `app::sm_post_event()` calls `AppStateMachine::enqueue()`, which takes a FreeRTOS mutex created in the `AppStateMachine` constructor (`src/state_machine/app_state_machine.cpp:77-81`).
-  - `integration_update()` runs after `ui_handler()` in the same `loop()` task. It calls `AppStateMachine::update()` (`src/state_machine/app_state_machine.cpp:100-109`), which drives non-blocking BLE work, updates the host-wait progress bar, and drains queued events under the same mutex (`src/state_machine/app_state_machine.cpp:136-153`).
-  - A dedicated FreeRTOS BLE radio task is created on physical hardware in `ble_service.cpp` and runs on core 0. All NimBLE scan/advertise/connect work executes on that task stack.
-  - NimBLE callbacks only capture state and post events via `sm_post_event()`, which takes the mutex. They do not mutate `GameContext` or call LVGL directly.
-  - State-machine actions run only on the `loop()` task while dispatching, so LVGL adapter calls (`ui_show_screen_*`, `ui_set_status`, etc.) are made from the LVGL-owning task.
+  - LVGL runs in the Arduino `loop()` task. `ui_handler()` (`src/main.cpp:99`) calls `lv_timer_handler()` first; its input-device read callbacks and button-click handlers execute in that task context.
+  - Button-click handlers call the integration-registered callback, which calls `app::sm_post_event()`. `AppStateMachine::enqueue()` takes a FreeRTOS mutex created in the constructor (`src/state_machine/app_state_machine.cpp:77-82`).
+  - `integration_update()` runs after `ui_handler()` in the same `loop()` task. `AppStateMachine::update()` drains queued events under the same mutex (`src/state_machine/app_state_machine.cpp:87-98, 136-153`).
+  - A dedicated FreeRTOS BLE radio task is created on physical hardware (`src/state_machine/ble_service.cpp:202-226`, pinned to core 0). NimBLE scan/advertise/connect work executes on that task stack.
+  - NimBLE callbacks only capture state and post events via `sm_post_event()`; they do not mutate `GameContext` or call LVGL directly.
+  - UI adapter calls (`ui_show_screen_*`, `ui_set_status`, etc.) are made from state-machine actions while dispatching on the LVGL-owning `loop()` task.
 
 - [PASS] **G14.5 — `src/main.cpp` exists and `pio run` succeeds.**
 
   - `src/main.cpp` exists at `projects/CYD_RPS/src/main.cpp`.
-  - `pio run -e esp32-2432s028r_cyd2usb` succeeded.
-  - `pio run -e esp32-2432s028r_cyd2usb_wokwi` succeeded.
+  - `pio run -e esp32-2432s028r_cyd2usb` completed successfully.
+  - `pio run -e esp32-2432s028r_cyd2usb_wokwi` completed successfully.
 
 ---
 
@@ -103,10 +94,10 @@
 
 | Environment | Command | Result |
 |-------------|---------|--------|
-| Physical CYD2USB | `pio run -e esp32-2432s028r_cyd2usb` | **SUCCESS** (Flash: 952,225 bytes / 1,310,720; RAM: 76,140 bytes / 327,680) |
-| Wokwi simulation | `pio run -e esp32-2432s028r_cyd2usb_wokwi` | **SUCCESS** (Flash: 864,833 bytes / 1,310,720; RAM: 68,752 bytes / 327,680) |
+| Physical CYD2USB | `pio run -e esp32-2432s028r_cyd2usb` | **SUCCESS** — Flash: 953,033 / 1,310,720 bytes; RAM: 76,148 / 327,680 bytes |
+| Wokwi simulation | `pio run -e esp32-2432s028r_cyd2usb_wokwi` | **SUCCESS** — Flash: 865,605 / 1,310,720 bytes; RAM: 68,760 / 327,680 bytes |
 
-Both builds completed without errors or warnings that would block the review.
+Both builds completed without errors.
 
 ---
 
@@ -114,53 +105,27 @@ Both builds completed without errors or warnings that would block the review.
 
 ### `loop()` Ordering
 
-`src/main.cpp:96-100` calls `ui_handler()` (LVGL) before `integration_update()`:
+`src/main.cpp:96-100` calls LVGL before the state-machine update:
 
 ```cpp
 ui_handler();
 integration_update();
 ```
 
-This ordering guarantees that `EV_HOST_GAME` and other LVGL-posted events are fully dispatched before any deferred NimBLE radio work runs, keeping NimBLE radio work outside the LVGL timer context.
+This keeps NimBLE radio work outside the `lv_timer_handler()` context.
 
 ### BLE Initialization Order
 
-`src/main.cpp:61-78` initializes BLE in the required order:
-
-```cpp
-app::HalService& hal = app::hal_service();
-#if defined(WOKWI_SIMULATION)
-    Serial.println("CYD_RPS: Wokwi simulation - BLE stack skipped");
-#else
-    if (!app::ble_service().init()) {
-        hal.mark_ble_init_failed(true);
-    } else {
-        app::ble_service().start_radio_task();
-    }
-#endif
-hal.mark_initialized(!hal.ble_init_failed() && !hal.hw_init_failed());
-```
-
-On physical hardware:
-
-1. `ble_service().init()` initializes NimBLE and the GATT server while no GAP procedure is active.
-2. `ble_service().start_radio_task()` then creates the dedicated radio task, after the GATT server is already started.
+`src/main.cpp:61-78` initializes NimBLE and starts the dedicated radio task only after the GATT server has been started during `ble_service().init()`, satisfying the LL-044 sequencing requirement.
 
 ### Serial Command Integration
 
-`src/main.cpp:102-103` calls the Firmware Logic serial command handlers from `loop()`:
-
-```cpp
-app::serial_process_input();
-app::serial_command_dispatch();
-```
-
-This is pure wiring: command parsing and event posting live in `src/state_machine/serial_command_handler.cpp`.
+`src/main.cpp:102-104` calls the serial command parser and dispatcher from `loop()`; command parsing and event posting remain in `src/state_machine/serial_command_handler.cpp`.
 
 ---
 
 ## Conclusion
 
-All Stage 14 quality gates pass for CYD_RPS v0.2.0 on re-review. The integration wiring respects ownership boundaries, implements the full UI-to-state-machine contract including the serial command bindings, introduces no business logic, and preserves task safety with the dedicated BLE radio task. `src/main.cpp` exists and the firmware builds successfully for both the physical-hardware and Wokwi environments.
+All Stage 14 quality gates pass for CYD_RPS v0.2.1. The integration wiring respects agent ownership boundaries, implements every UI and serial binding declared in `docs/state_machine_contract.json`, introduces no business logic, preserves task safety with the dedicated BLE radio task and mutex-protected event queue, and builds successfully for both physical and Wokwi environments.
 
 **Final Verdict: GO**

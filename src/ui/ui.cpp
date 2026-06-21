@@ -24,6 +24,14 @@
 static ui_event_post_callback_t s_event_post_callback = nullptr;
 
 // ---------------------------------------------------------------------------
+// Cached session score so the result screen can display the same values that
+// were last shown on the gameplay screen (U05).
+// ---------------------------------------------------------------------------
+static uint16_t s_score_wins   = 0;
+static uint16_t s_score_losses = 0;
+static uint16_t s_score_draws  = 0;
+
+// ---------------------------------------------------------------------------
 // Display driver state (owned by the UI layer).
 // ---------------------------------------------------------------------------
 static TFT_eSPI* s_tft = nullptr;
@@ -250,6 +258,9 @@ void ui_show_screen_result(move_t local_move, move_t peer_move, outcome_t outcom
     ui::g_screens.active_status_label = nullptr;
     ui::g_screens.active_score_label  = s.lblScore;
 
+    // U05: show the same score values that were last updated on gameplay.
+    ui_set_score(s_score_wins, s_score_losses, s_score_draws);
+
     ui_set_local_move(local_move);
     ui_set_peer_move(peer_move);
     ui_set_outcome(outcome);
@@ -293,6 +304,11 @@ void ui_set_peer_device_id(const char* id)
 
 void ui_set_score(uint16_t wins, uint16_t losses, uint16_t draws)
 {
+    // U05: cache the latest score so it can be applied to the result screen.
+    s_score_wins   = wins;
+    s_score_losses = losses;
+    s_score_draws  = draws;
+
     if (ui::g_screens.active_score_label != nullptr) {
         lv_label_set_text_fmt(ui::g_screens.active_score_label,
                               "W:%u L:%u D:%u", wins, losses, draws);

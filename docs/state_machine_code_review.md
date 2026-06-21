@@ -1,165 +1,105 @@
-# Assessment: Stage 12 — Firmware Logic Code Critic (Re-review)
+# Firmware Logic Code Review: CYD_RPS v0.2.1 — Stage 12
 
+**Workflow ID:** wvc_20260618_011606  
 **Project:** CYD_RPS  
-**Version:** 0.2.0  
-**Workflow ID:** wvc_20260617_171607  
-**Reviewer:** Stage 12 Firmware Logic Code Critic  
-**Verdict: PASS**
+**Target Version:** 0.2.1  
+**Reviewer:** Firmware Logic Code Critic (Stage 12)  
+**Inputs Reviewed:**
+- `projects/CYD_RPS/docs/BugReport_CYD_RPS_v0.2.0.md` (issue B01)
+- `projects/CYD_RPS/docs/state_machine.puml`
+- `projects/CYD_RPS/docs/state_machine_contract.json`
+- `projects/CYD_RPS/dependency_manifest.json`
+- `projects/CYD_RPS/src/state_machine/state_machine_generated.cpp`
+- `projects/CYD_RPS/src/state_machine/ble_service.cpp`
+- `projects/CYD_RPS/src/state_machine/ble_service.h`
+- `projects/CYD_RPS/src/state_machine/app_state_machine.cpp`
+- `known_issues.md`
+- `lessons_learned.md` (LL-036, LL-039, LL-040, LL-042, LL-043, LL-044, LL-045, LL-046, LL-047, LL-048, LL-049, LL-050)
 
----
-
-## Executive Summary
-
-This is the Stage 12 re-review after the Stage 11 revision. The two Stage 11 action items have been verified as resolved:
-
-1. **H05 action mismatch (Start → Joining):** The `docs/state_machine.puml`, generated `src/state_machine/state_machine_generated.cpp`, and `docs/test_plan.json` now all agree on `on_conflict_become_join()` as the transition action. Host-level state-machine tests pass 73/73, including H05.
-2. **Missing Wokwi serial markers:** `src/state_machine/app_state_machine.cpp` now emits `STATE:`, `MODE:`, and `SCORE:` markers on the appropriate transitions, satisfying the Wokwi `serial_expect` assertions in `docs/test_plan.json`.
-
-The generated state machine continues to match the PlantUML contract transition-for-transition, the builds for both target and Wokwi environments succeed, and all Stage 12 quality gates pass.
-
----
-
-## Revision Verification
-
-### H05 — Start → Joining action name
-
-| Source | Declared Action | Status |
-|--------|-----------------|--------|
-| `docs/state_machine.puml` line 28 | `on_conflict_become_join()` | ✅ Matches test plan |
-| `src/state_machine/state_machine_generated.cpp` lines 175–176 | `on_conflict_become_join()` | ✅ Matches PUML |
-| `docs/test_plan.json` H05 expected result | `on_conflict_become_join()` invoked | ✅ Matches firmware |
-| `tests/host/test_state_machine.py` H05 | actions=`['on_conflict_become_join']` | ✅ PASS |
-
-### Wokwi serial markers
-
-| Marker | Required by | Implementation | Location |
-|--------|-------------|----------------|----------|
-| `STATE: <Name>` | W01, W02, W04, W05, W07, W08, T03, T07, T09, M01–M05 | `Serial.printf("STATE: %s\n", state_name(after));` on every state change | `app_state_machine.cpp:150` |
-| `MODE: SINGLE_PLAYER` | W03, W09, T04, M02, M11 | `Serial.printf("MODE: %s\n", game_mode_name(...));` in `on_host_game()`, `on_solo()`, `on_conflict_become_join()`, `on_peer_connected()` | `app_state_machine.cpp:291, 306, 349, 372` |
-| `MODE: MULTI_PLAYER` | M11 | Same as above | `app_state_machine.cpp:291, 349, 372` |
-| `SCORE: W%u L%u D%u` | T06, M04 | `Serial.printf("SCORE: W%u L%u D%u\n", ...);` in `evaluate_and_show_result()` | `app_state_machine.cpp:522` |
-
-All markers are emitted unconditionally via `Serial.printf` and are observable by Wokwi `serial_expect` tests.
+**Verdict:** GO
 
 ---
 
 ## Quality Gate Results
 
-### G12.1 — Every transition in `state_machine.puml` has a corresponding code path
-
-**PASS**
-
-`src/state_machine/state_machine_generated.cpp` implements every transition declared in `docs/state_machine.puml` for the v0.2.0 states (Boot, Start, HostWait, HostTimeoutDialog, Joining, Gameplay, Evaluating, Result, Disconnected, Error, Halted). Guarded branches, error transitions, and self-transitions are all present. Host-level transition tests (`tests/host/test_state_machine.py`) exercise the dispatch table and confirm expected target states and action invocations (73/73 PASS).
-
-### G12.2 — Guards reference `dependency_manifest.json` facts or runtime probes
-
-**PASS**
-
-All guards read runtime state rather than hard-coded values:
-
-| Guard | Source |
-|-------|--------|
-| `guard_init_ok` | `hal_service().init_ok()` |
-| `guard_ble_init_failed` | `hal_service().ble_init_failed()` |
-| `guard_hw_init_failed` | `hal_service().hw_init_failed()` |
-| `guard_fatal` | `hal_service().fatal()` |
-| `guard_host_mac_valid` | `ctx_.host_mac_valid` |
-| `guard_peer_host_seen` | `ctx_.peer_host_seen` |
-| `guard_mode_single` | `ctx_.game_mode` |
-| `guard_mode_multi_and_*_peer_move_received` | `ctx_.game_mode` and `ctx_.peer_move` |
-| `guard_local_move_chosen` / `guard_not_local_move_chosen` | `ctx_.local_move` |
-| `guard_retries_exhausted` | Contract compatibility (`true`; `EV_CONNECT_FAILED` is posted only after retries are exhausted) |
-
-No guard encodes assumptions about NimBLE address types, board revisions, or library versions.
-
-### G12.3 — No LVGL or UI toolkit imports in state-machine code
-
-**PASS**
-
-No file under `src/state_machine/` includes LVGL, TFT_eSPI, or XPT2046 headers. UI integration is isolated behind weak `extern "C"` adapter stubs declared in `app_state_machine.h` (e.g., `ui_show_screen_start`, `ui_set_status`). The state machine only invokes these adapters; the integration/UI layer supplies the real implementations.
-
-### G12.4 — All external calls have defined error-state transitions
-
-**PASS**
-
-- `main.cpp` checks the return value of `app::ble_service().init()` and records `ble_init_failed` in `HalService`; `app_init()` propagates this to `EV_ERROR`.
-- `BleService::init()` returns `false` if server/service/characteristic creation fails.
-- `do_start_presence_beacon()` checks `start_scanning()` and posts `EV_ERROR` on failure.
-- `start_presence_advertising()` and `start_host_advertising()` check free heap and post `EV_ERROR` if advertising cannot be configured.
-- `do_connect_to_host()` posts `EV_CONNECT_FAILED` after exhausted retries and `EV_ERROR` on service/characteristic/subscription failures.
-- `send_move()` returns a `bool`; `AppStateMachine` calls `app_on_error("Failed to send move")` on failure.
-
-**Note:** `NimBLEAdvertising::start()` and `NimBLEScan::start()` in the Host-advertising path do not check the boolean return directly. A failure there will eventually surface as a Host-wait timeout or a connection failure rather than an immediate `EV_ERROR`. This is acceptable for the current design but could be hardened in a future revision.
-
-### G12.5 — Generated code matches `state_machine.puml` transition-for-transition
-
-**PASS**
-
-Regenerating the state machine with `execution/generate_state_machine_cpp.py --input docs/state_machine.puml` produces output identical to the committed `state_machine_generated.cpp` and `state_machine_generated.h` (`diff` reports no changes). The C++ dispatch table maps one-to-one with the PlantUML event/guard/action tuples, including the revised `Start --> Joining / on_conflict_become_join()` transition.
-
-### G12.6 — No blocking delays in state-machine update loops
-
-**PASS**
-
-`AppStateMachine::update()` is non-blocking: it calls `ble_service().update(millis())`, updates the Host-wait progress bar, and dispatches pending events. All `vTaskDelay` calls are confined to `BleService::do_become_host()` and `do_connect_to_host()`, which run on the dedicated radio task and therefore do not block the main state-machine loop.
-
-### G12.7 — All GPIO access goes through the HAL/pins.h layer
-
-**PASS**
-
-No file under `src/state_machine/` performs direct GPIO access (`digitalWrite`, `digitalRead`, `pinMode`, or register manipulation). Hardware constants come from `include/pins.h` and `include/hal_config.h` only. The state machine never executes inside an ISR and holds the event-queue mutex only for short ring-buffer operations.
+| Gate | Result | Evidence |
+|------|--------|----------|
+| G12.1 | PASS | Every transition declared in `state_machine.puml` is represented in `state_machine_generated.cpp` `StateMachine::dispatch()`. Boot (3), Start (5), HostWait (6), HostTimeoutDialog (4), Joining (4), Gameplay (14), Evaluating (3), Result (4), Disconnected (3), Error (3), and Halted (0 terminal) all match transition-for-transition. |
+| G12.2 | PASS | All guards read runtime state or HAL probes rather than hard-coded assumptions: `guard_init_ok`/`guard_ble_init_failed`/`guard_hw_init_failed`/`guard_fatal` query `hal_service()`; mode/move guards query `GameContext` fields populated by actions and BLE callbacks. `dependency_manifest.json` facts (board, NimBLE version, Wokwi flag) are consumed at compile/init time, not in guards. |
+| G12.3 | PASS | `state_machine_generated.cpp`, `app_state_machine.cpp`, `ble_service.cpp`, and `ble_service.h` contain no `#include <lvgl...>` or LVGL object usage. The state machine only calls weak UI adapter functions; the UI layer is responsible for LVGL. |
+| G12.4 | PASS | External/BLE call errors are mapped to state-machine events: `BleService::init()` return is checked in `main.cpp` and drives `EV_ERROR` via `app_init()`; `do_connect_to_host()` posts `EV_CONNECT_FAILED` or `EV_ERROR`; `getService`/`getCharacteristic`/`subscribe` failures post `EV_ERROR`; `send_move()` failures in actions call `app_on_error("Failed to send move")` which posts `EV_ERROR`. No exceptions are silently swallowed. |
+| G12.5 | PASS | `state_machine_generated.cpp` was produced by `generate_state_machine_cpp.py` from `state_machine.puml`. State names, event names, guard names, action names, and target states match the PUML source. The transition matrix in `dispatch()` is a literal encoding of the PUML diagram. |
+| G12.6 | PASS | `AppStateMachine::update()` (`app_state_machine.cpp:100-109`) is non-blocking: it calls `ble_service().update()`, updates host-wait progress, and dispatches pending events with no `delay()` or busy-wait. The intentional guard delays (`vTaskDelay(20 ms)` in `do_become_host()`/`do_restart_host_advertising()` and `vTaskDelay(50 ms)` in `do_connect_to_host()`) run on the dedicated BLE radio task, not in the state-machine update loop. |
+| G12.7 | PASS | State-machine files contain no direct GPIO register access. `main.cpp` owns GPIO initialization and uses constants from `include/pins.h` and `include/hal_config.h`. `hal_service.h`/`hal_service.cpp` only record init-probe results; they do not drive pins. |
 
 ---
 
-## BLE-Specific Checks
+## Additional Checks
 
-| Check | Result | Evidence |
-|-------|--------|----------|
-| Host advertises on public MAC | PASS | `BleService::init()` calls `NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC)` (`ble_service.cpp:126`). |
-| Join connects to public MAC directly (not reconstructed from `getNative()`) | PASS | `RpsAdvertisedDeviceCallbacks::onResult()` extracts the public MAC either from a public advertisement address or from manufacturer data; `do_connect_to_host()` constructs `NimBLEAddress(host_mac, BLE_ADDR_PUBLIC)` (`ble_service.cpp:453`). |
-| Dedicated radio task owns all NimBLE operations | PASS with caveat | The radio task owns scan/advertise/connect/start/stop commands. `send_move()` and `disconnect()` are called from the main loop but are non-blocking GATT data-plane operations (write-without-response / notify). They do not exhibit the controller-race behavior that motivated the radio task. |
-| Event queue is thread-safe | PASS | `AppStateMachine` creates a FreeRTOS mutex in its constructor and locks both `enqueue()` and `dispatch_pending()`. |
-| GATT server started during init before any GAP procedure | PASS | `BleService::init()` creates the service/characteristic and calls `service_->start()` and `server_->start()` before any scan/advertise/connect is started (`ble_service.cpp:154-158`). |
-| `#ifndef WOKWI_SIMULATION` guards NimBLE init | PASS | Both `main.cpp` and `BleService::init()` skip NimBLE initialization under `WOKWI_SIMULATION`. |
-| Advertising stop→connect guard delay | PASS | `do_connect_to_host()` waits `STOP_ADV_TO_CONNECT_GUARD_MS` (50 ms) after `stop_advertising()` before each `connect()` attempt (`ble_service.cpp:458`). |
-| Host advertising restart guard delay | PASS | `do_become_host()` and `do_restart_host_advertising()` wait `HOST_STOP_SCAN_TO_ADV_GUARD_MS` (20 ms) after stopping scan/advertise before restarting Host advertising (`ble_service.cpp:352`, `411`). |
-| Serial command parser maps commands to state-machine events | PASS | `serial_command_dispatch()` maps `HOST`, `SOLO`, `ROCK`, `PAPER`, `SCISSORS`, `AGAIN`, `RESET`, and `HOME` to the corresponding `Event` values (`serial_command_handler.cpp:91-104`). |
+### B01 — Bluetooth auto-join filtering
+
+**[PASS]** `RpsAdvertisedDeviceCallbacks::onResult()` in `ble_service.cpp:52-120` now accepts a Host advertisement when **either** the RPS service UUID is present (`advertisedDevice->isAdvertisingService(service_uuid)`, line 62) **or** the manufacturer data matches the presence-beacon signature (`PRESENCE_COMPANY_ID == 0x00FF`, 4-character device ID, 6-byte public MAC, lines 67-89).
+
+**[PASS]** The 4-character device ID in manufacturer data is validated as hexadecimal (`'0'-'9'`, `'A'-'F'`, `'a'-'f'`) at lines 75-83 before the beacon is accepted.
+
+**[PASS]** Public MAC extraction follows the B01 rule: if the advertisement address type is `BLE_ADDR_PUBLIC`, the MAC is copied from `addr.getNative()` (lines 102-104); otherwise it is taken from the manufacturer-data payload (lines 107-109).
+
+**[PASS]** Discovered peer address type is preserved: `onResult()` passes `addr.getType()` to `on_host_found()` (line 118), which stores it in `peer_addr_type_` (`ble_service.h:192`). `do_connect_to_host()` constructs `NimBLEAddress(host_mac, peer_addr_type_)` (lines 491-493). The only `BLE_ADDR_PUBLIC` fallback is defensive (when `peer_addr_type_ == 0xFF`), matching the "captured and used verbatim" requirement for the normal flow.
+
+### LL-036 — Propagate BLE init failures / non-blocking discovery
+
+**[PASS]** `main.cpp:72-78` checks `ble_service().init()` and records `ble_init_failed` before `app_init()` posts `EV_ERROR` or `EV_BOOT_DONE`. `BleService::start_scanning()` uses the non-blocking callback overload `scan->start(0, nullptr, false)` (`ble_service.cpp:792`).
+
+### LL-039 / LL-042 — Radio-task ownership of NimBLE operations
+
+**[PASS]** All scan/advertise/connection operations initiated by state-machine actions are posted to the dedicated radio task:
+- `signal_start_presence_beacon()` / `signal_stop_presence_beacon()`
+- `become_host()` (posts `BECOME_HOST` when the radio task is ready)
+- `signal_stop_host_advertising()` / `signal_restart_host_advertising()`
+- `signal_connect_to_host()`
+
+**[NOTE]** Two NimBLE operations remain direct calls from actions rather than radio-task commands:
+- `BleService::send_move()` is called directly from `on_local_move_*_complete()` / `on_local_move_*_pending()` (`app_state_machine.cpp:412, 423, 434, 445, 456, 467`). It performs a quick GATT notify/write and returns immediately; failures are surfaced via `app_on_error()`.
+- `BleService::disconnect()` is called directly from `on_peer_disconnected()` and `reset_and_return_start()` (`app_state_machine.cpp:388, 537`). It terminates the local link and returns immediately.
+
+Neither call blocks the state-machine update loop, and neither silently swallows errors. They are outside the scope of the original LL-042 failure pattern (scan/advertise/connect stalling or resetting the device from the LVGL stack), so they do not fail G12.4 or G12.6. Future hardening could route them through the radio task for symmetry, but this is not required for v0.2.1.
+
+### LL-040 — Thread-safe event queue
+
+**[PASS]** `AppStateMachine` creates a FreeRTOS mutex in its constructor (`app_state_machine.cpp:80`), takes it in `enqueue()` and `dispatch_pending()`, and gives it back afterward (`app_state_machine.cpp:155-165`). BLE callbacks post events via `sm_post_event()` from a different task, so the mutex protects the ring buffer.
+
+### LL-043 — Bug-report rationale comments
+
+**[PASS]** B01 and LL-045 are referenced in adjacent comments wherever the filtering logic or address-type handling changed:
+- `ble_service.cpp:55-61` — B01 rationale for accepting manufacturer-data beacon.
+- `ble_service.cpp:95-97` — B01 rationale for MAC extraction fallback.
+- `ble_service.cpp:116-117` — B01 / LL-045 address-type preservation.
+- `ble_service.h:9, 14-16, 190-192` — header-level B01 / LL-045 references.
+
+### LL-044 — GATT server started before GAP procedures
+
+**[PASS]** `BleService::init()` creates the NimBLE server, service, and characteristic and calls `service_ptr(service_)->start()` and `srv->start()` (lines 191-195) before any scan/advertise/connect procedure can begin.
+
+### LL-045 — Preserve BLE peer address type
+
+**[PASS]** Address type is captured in `onResult()`, stored in `peer_addr_type_`, reset at the start of each discovery/advertising cycle (`do_start_presence_beacon()` line 311, `do_become_host()` line 381), and used in `do_connect_to_host()` line 492. No hard-coded `BLE_ADDR_PUBLIC` is used in the normal discovery→connection path.
+
+### LL-046 / LL-047 / LL-048 / LL-049 / LL-050 — Role negotiation, advertising stop/connect guard delays, and retries
+
+**[PASS]** The v0.2.0 negotiation behavior is preserved and improved:
+- Public MAC is embedded in manufacturer data (`start_host_advertising()` lines 427-434 and `start_presence_advertising()` lines 352-359) for symmetric role resolution (`on_host_found()` lines 569-587).
+- JOIN keeps advertising until role is resolved, then stops advertising only immediately before each `connect()` attempt (`do_connect_to_host()` lines 473-474, 498).
+- Bounded retry loop uses `GameContext::kMaxJoinRetries` and a 5-second connect timeout (`do_connect_to_host()` lines 496-509).
+- Guard delays are present: 20 ms after stopping scan before host advertising (`do_become_host()` line 391), 20 ms in `do_restart_host_advertising()` line 450, and 50 ms after stopping advertising before each `connect()` (`do_connect_to_host()` line 498).
+
+**[NOTE]** Instrumentation logs are present for peer discovery (`DISCOVERY: host seen via...`, lines 105-112; `DISCOVERY: peer ...`, lines 564-567), role resolution (`ROLE: local MAC lower/higher/auto-join`, lines 574, 578, 590), and JOIN connect attempts (`JOIN: connecting...`, `JOIN: connect attempt failed`, lines 500-512). An explicit log around the HOST advertising restart in `do_become_host()` / `do_restart_host_advertising()` is not present; adding one would aid future two-board diagnosis but is not a gate failure.
+
+### LL-034 — Single-owner hardware initialization
+
+**[PASS]** `hal_service.h:5-8` explicitly states that `HalService` does not initialize hardware; it only records probe results. `main.cpp:42-78` owns the single initialization sequence for TFT, touch, BLE, and UI. State-machine actions do not call `init()`/`begin()` on peripherals.
 
 ---
 
-## Lessons-Learned Regression Checks
+## Summary
 
-- **LL-034 (single-owner hardware init):** PASS. `main.cpp` owns all peripheral initialization; `app_init()` and `HalService` only probe/record results.
-- **LL-036 (BLE init failure propagation & non-blocking discovery):** PASS. BLE init result is checked in `main.cpp`; discovery uses the non-blocking `scan->start(0, nullptr, false)` overload with a polled Host-wait timeout.
-- **LL-037 (skip NimBLE under Wokwi):** PASS. `WOKWI_SIMULATION` guards in `main.cpp` and `BleService::init()`.
-- **LL-038 (default env is hardware):** PASS. `platformio.ini` sets `default_envs = esp32-2432s028r_cyd2usb`.
-- **LL-039/LL-042 (radio task owns heavy NimBLE work):** PASS. All scan/advertise/connect operations are posted to the radio task via `RadioCommand`.
-- **LL-040 (thread-safe event queue):** PASS. Mutex protects `enqueue()` and `dispatch_pending()`.
-- **LL-044 (start GATT server before GAP):** PASS. Server started in `init()`.
-- **LL-045/LL-047/LL-048/LL-049/LL-050 (public-MAC role resolution, connection retries, guard delays):** PASS. Role resolution compares public MACs; JOIN retries up to `kMaxJoinRetries` with bounded connect timeout; guard delays and instrumentation logs are present.
-
----
-
-## Build & Test Evidence
-
-- `pio run -e esp32-2432s028r_cyd2usb` — **SUCCESS**
-- `pio run -e esp32-2432s028r_cyd2usb_wokwi` — **SUCCESS**
-- `python tests/host/test_state_machine.py` — **73 passed, 0 failed**
-  - H05 (`Start -> Joining on EV_HOST_FOUND`) now passes with the expected action `on_conflict_become_join`.
-
----
-
-## Notes & Observations
-
-1. **Stage 11 revision items verified closed.** H05 action-name mismatch and missing Wokwi serial markers are both resolved.
-2. **Unchecked `adv->start()` returns:** `start_presence_advertising()` and `start_host_advertising()` do not assert the `bool` returned by `NimBLEAdvertising::start()`. A failure path here would silently skip advertising rather than posting `EV_ERROR`. In HostWait this is mitigated by the Host-wait timeout; for the Start presence beacon it could delay peer discovery. Recommend checking the return and posting `EV_ERROR` in a future revision.
-3. **`BleService::update()` is currently a no-op:** Host-wait timeout polling lives in `AppStateMachine::update_host_wait_progress()`. The empty `BleService::update()` hook is harmless but `post_host_timeout_if_needed()` is dead code. Consider removing or consolidating in a future cleanup.
-4. **`send_move()` not queued to radio task:** As noted in the BLE checks, this is acceptable because the operation is a non-blocking GATT write/notify. If future field testing reveals main-loop GATT instability, this operation can be added to the `RadioCommand` queue.
-
----
-
-## Conclusion
-
-The Stage 11 revision successfully addressed the H05 action-name mismatch and the missing Wokwi serial markers. The v0.2.0 firmware logic satisfies all Stage 12 quality gates. The code is structurally sound, the generated state machine matches the PlantUML contract, BLE correctness requirements are met, and the build succeeds for both target environments.
-
-**Verdict: PASS**
+All seven quality gates pass. The Stage 11 firmware logic changes correctly implement the B01 fix (accept service UUID or manufacturer-data beacon, validate hex device ID, preserve address type), maintain radio-task ownership of scan/advertise/connect operations, keep the state-machine update loop non-blocking, and propagate BLE errors into PUML-defined transitions. The code is ready to proceed.

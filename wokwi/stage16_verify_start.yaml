@@ -1,0 +1,6 @@
+name: CYD_RPS Stage 16 verify initial/ready state
+version: 1
+steps:
+  - wait-serial: "CYD_RPS setup start"
+  - wait-serial: "CYD_RPS setup done"
+  - wait-serial: "STATE: Start"
