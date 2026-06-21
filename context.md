@@ -1,9 +1,9 @@
 # CYD_RPS — Release Context
 
 **Project:** CYD_RPS  
-**Version:** 0.2.0  
-**Workflow ID:** wvc_20260617_171607  
-**Revision Type:** minor_revision  
+**Version:** 0.2.1  
+**Workflow ID:** wvc_20260618_011606  
+**Revision Type:** bug_fix  
 **Release Date:** 2026-06-21  
 **Board Version:** CYD2USB_v3 (ESP32-2432S028R)  
 **Target Environment:** hardware  
@@ -12,22 +12,20 @@
 
 ---
 
-## Minor-Revision Summary
+## Bug-Fix Summary
 
-This release adds user-selected Host mode, BLE presence beacons, a white-on-black UI theme, persistent scoreboard, and a serial command parser to CYD_RPS.
+This release fixes one BLE auto-join issue and five UI issues discovered in v0.2.0.
 
-| Feature | Location | Details |
-|---------|----------|---------|
-| User-selected Host mode | `src/state_machine/app_state_machine.cpp`, `src/ui/screens.cpp` | Player can tap "Host Game" to enter `HostWait` and broadcast a BLE presence beacon while scanning for peers. |
-| BLE presence beacons & peer discovery | `src/state_machine/ble_service.cpp/h` | HOST broadcasts a connectable advertisement; JOIN scans and resolves role conflicts using public MAC address (lower MAC becomes HOST). |
-| White-on-black UI theme | `src/ui/theme.cpp/h`, `src/ui/screens.cpp` | Inverts previous dark-on-light scheme for improved readability on the CYD2USB display. |
-| Persistent scoreboard | `src/state_machine/app_state_machine.cpp`, `src/state_machine/game_logic.h` | Tracks wins, losses, and draws across multiple rounds; resets on boot. |
-| Serial command parser | `src/state_machine/serial_command_handler.cpp/h` | Recognizes `HOST`, `SOLO`, `ROCK`, `PAPER`, `SCISSORS`, `AGAIN`, `RESET`, `HOME`, and unknown/malformed commands; posts corresponding events to the state machine. |
-| Host timeout dialog | `src/state_machine/app_state_machine.cpp`, `src/ui/screens.cpp` | If no peer is found within ~15 s, a Retry/Solo dialog is shown. |
-| Home icon reset | `src/ui/screens.cpp`, `src/ui/touch_mapping.cpp/h` | A home icon in the top-right corner posts `EV_RESET` from any screen. |
-| State instrumentation | `src/state_machine/app_state_machine.cpp` | Emits `STATE:`, `MODE:`, and `SCORE:` markers over serial for QA observability. |
+| Fix | ID | Location | Details |
+|-----|----|----------|---------|
+| BLE auto-join advertisement filtering | B01 | `src/state_machine/ble_service.cpp/h` | JOIN now accepts a Host advertisement by service UUID **or** by the manufacturer-data presence-beacon signature (company ID `0x00FF`, 12-byte payload). The 4-char device ID is validated as hex, and the peer address type is preserved for the subsequent NimBLE connection. |
+| Scoreboard layout overlap | U01 | `src/ui/screens.cpp` | Scoreboard label aligned to bottom center; Play Again button moved up so the two no longer overlap. |
+| White text on black background | U02 | `src/ui/theme.cpp` | All label and button text now uses `lv_color_white()` for consistent readability on the dark UI theme. |
+| Timeout-dialog button layout | U03 | `src/ui/screens.cpp` | Retry and Solo buttons on the Host timeout dialog are now smaller (85×45) and placed side-by-side at the bottom of the dialog. |
+| Host-wait progress bar styling | U04 | `src/ui/screens.cpp` | Progress-bar main background is black and the indicator fill is blue (`#0066FF`), making it visible on the dark theme. |
+| Result-screen scoreboard consistency | U05 | `src/ui/ui.cpp` | Cached score values are applied to the Result screen so it displays the same win/loss/draw counts as the Gameplay screen. |
 
-This v0.2.0 release preserves all v0.1.4–v0.1.9 fixes and infrastructure: GATT server start during `init()`, address-type capture, dedicated BLE radio task, larger NimBLE host-task stack, heap guard, reduced LVGL memory, deferred discovery, thread-safe event queue, symmetric role negotiation, bounded JOIN discovery/retry windows, short peer-search advertising interval, stop-advertise-only-before-connect, and the `WOKWI_SIMULATION` guard.
+This v0.2.1 release preserves all v0.2.0 features: user-selected Host mode, BLE presence beacons, white-on-black UI theme, persistent scoreboard, serial command parser, Host timeout dialog, home icon reset, and state instrumentation.
 
 ---
 
@@ -35,7 +33,7 @@ This v0.2.0 release preserves all v0.1.4–v0.1.9 fixes and infrastructure: GATT
 
 | Artifact | Path |
 |----------|------|
-| Release ZIP | `projects/CYD_RPS/dist/CYD_RPS_v0.2.0.zip` |
+| Release ZIP | `projects/CYD_RPS/dist/CYD_RPS_v0.2.1.zip` |
 | Firmware binary | `firmware.bin` (inside ZIP and at `projects/CYD_RPS/.pio/build/esp32-2432s028r_cyd2usb/firmware.bin`) |
 | Build configuration | `platformio.ini` (inside ZIP) |
 | Flash scripts | `flash_esptool.bat`, `flash_esptool.sh`, `flash_cyd_rps.bat` (inside ZIP) |
@@ -49,7 +47,7 @@ ZIP contents verified:
 - `flash_esptool.sh`
 - `flash_cyd_rps.bat`
 
-Firmware size: 958,800 bytes.
+Firmware size: 959,616 bytes.
 
 ---
 
@@ -102,7 +100,7 @@ STATE: Start
 | Two-board connection verification is manual | The end-to-end two-board multiplayer connection flow must be verified manually because no CYD2USB board is detected on the host USB ports and Wokwi does not emulate NimBLE reliably. It is documented as manual verification in `docs/qa_results.md` §4. |
 | Scoreboard is RAM-only | Round history and scores persist across rounds but reset on every reboot. |
 | Host tests use a Python model | The 73 host state-machine tests execute a Python mirror of the generated C++ state machine because no host C++ compiler is available and the firmware depends on Arduino/LVGL/NimBLE. The model is derived directly from `src/state_machine/state_machine_generated.cpp` and `docs/state_machine.puml`. |
-| Wokwi HOST path errors | In Wokwi, `do_become_host()` posts `EV_ERROR` because BLE is not initialized; the HOST timeout dialog cannot be reached in simulation. |
+| Wokwi HOST path errors | In Wokwi, `do_become_host()` posts `EV_ERROR` because BLE is not initialized under `WOKWI_SIMULATION`; the HOST timeout dialog cannot be reached in simulation. |
 
 ---
 
@@ -114,11 +112,12 @@ STATE: Start
 | Build (Wokwi simulation environment) | PASS |
 | Host state-machine tests (73/73) | PASS |
 | Distribution ZIP complete | PASS |
-| Integration code review | PASS |
-| Wokwi smoke test | PASS (W07–W09 blocked by NimBLE limitation) |
+| UI/UX bug fixes (U01–U05) verified | PASS |
+| BLE bug fix (B01) verified | PASS |
+| Wokwi smoke test | PASS (W02, W07–W09 blocked by NimBLE limitation) |
 | Physical target tests | NOT EXECUTED — no board attached |
 | Manual touch/BLE verification procedures | DOCUMENTED |
-| GitHub release | PASS — release `v0.2.0` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.2.0 with `firmware.bin` and `CYD_RPS_v0.2.0.zip` attached |
+| GitHub release | PASS — release `v0.2.1` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.2.1 with `firmware.bin` and `CYD_RPS_v0.2.1.zip` attached |
 
 See `docs/qa_results.md` for the full QA report.
 
@@ -129,11 +128,11 @@ See `docs/qa_results.md` for the full QA report.
 **GitHub release created successfully.**
 
 - Repository: https://github.com/CSprinkle93065/CYD_RPS
-- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.2.0
-- Tag: `v0.2.0`
+- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.2.1
+- Tag: `v0.2.1`
 - Attachments:
   - `firmware.bin`
-  - `CYD_RPS_v0.2.0.zip`
+  - `CYD_RPS_v0.2.1.zip`
 - Local commit and tag were pushed to `origin/main`.
 
 ---
@@ -144,8 +143,8 @@ See `docs/qa_results.md` for the full QA report.
 
 | Metric | Used | Total | Percentage |
 |--------|------|-------|------------|
-| RAM | 76,140 bytes | 327,680 bytes | 23.2% |
-| Flash | 952,225 bytes | 1,310,720 bytes | 72.6% |
+| RAM | 76,148 bytes | 327,680 bytes | 23.2% |
+| Flash | 953,033 bytes | 1,310,720 bytes | 72.7% |
 
 **Partition Scheme:** `default.csv` (1.3 MB application partition)  
 **Partition-Fit Check:** PASS — firmware fits within the 1,310,720-byte application partition.
@@ -154,8 +153,8 @@ See `docs/qa_results.md` for the full QA report.
 
 | Metric | Used | Total | Percentage |
 |--------|------|-------|------------|
-| RAM | 68,752 bytes | 327,680 bytes | 21.0% |
-| Flash | 864,833 bytes | 1,310,720 bytes | 66.0% |
+| RAM | 68,760 bytes | 327,680 bytes | 21.0% |
+| Flash | 865,605 bytes | 1,310,720 bytes | 66.0% |
 
 ---
 
