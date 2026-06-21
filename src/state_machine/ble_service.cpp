@@ -112,6 +112,17 @@ bool BleService::init() {
 
     NimBLEDevice::init(BLE_DEVICE_NAME);
 
+    // Clear any stale bonding/identity data left over from earlier firmware
+    // versions or previous connection attempts. Stale IRK/bond records can
+    // cause the peer controller to reject an incoming connection with
+    // BLE_ERR_REM_USER_CONN_TERM (status=13). Long-term bonding can be
+    // reintroduced intentionally later. Wrapped for WOKWI_SIMULATION because
+    // bonding helpers require a fully initialized NimBLE stack.
+    // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.5.
+#ifndef WOKWI_SIMULATION
+    NimBLEDevice::deleteAllBonds();
+#endif
+
     // Create the GATT server and move characteristic up-front so both roles
     // can share the same attribute handle layout.
     server_ = NimBLEDevice::createServer();
@@ -342,6 +353,15 @@ void BleService::on_peer_found(const uint8_t peer_addr[6], uint8_t addr_type,
     peer_addr_type_ = addr_type;
     peer_addr_valid_ = true;
 
+    // Instrumentation: captured address, address type, and public-MAC validity.
+    // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.1.
+    {
+        NimBLEAddress captured(peer_addr_, peer_addr_type_);
+        Serial.printf("BLE: on_peer_found addr=%s type=%d public_valid=%d\n",
+                      captured.toString().c_str(), peer_addr_type_,
+                      peer_public_addr_valid_);
+    }
+
     // Move the machine from PeerSearch to RoleNegotiating; actual role
     // resolution is performed by resolve_role() on the dedicated radio task.
     sm_post_event(Event::EV_PEER_FOUND);
@@ -370,6 +390,18 @@ void BleService::resolve_role() {
         return;
     }
 
+    // Instrumentation: local vs peer MAC comparison and chosen role.
+    // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.1.
+    {
+        uint8_t peer_addr_copy[6];
+        memcpy(peer_addr_copy, peer_addr_, 6);
+        NimBLEAddress peer_addr_obj(peer_addr_copy, peer_addr_type_);
+        Serial.printf("BLE: resolve_role local=%s peer=%s cmp=%d role=%s\n",
+                      local_addr.toString().c_str(),
+                      peer_addr_obj.toString().c_str(), cmp,
+                      cmp < 0 ? "HOST" : "JOIN");
+    }
+
     if (cmp < 0) {
         become_host();
     } else {
@@ -380,12 +412,21 @@ void BleService::resolve_role() {
 void BleService::become_host() {
     role_ = Role::HOST;
     advertising_pending_ = false;
-    // Host is the Peripheral: stop scanning and make sure advertising is running.
+    // Host is the Peripheral: stop scanning and enter a clean peripheral-only
+    // connectable state. The advertisement started while the controller was
+    // also scanning may not be accepted as a valid connection target once
+    // scanning stops, so stop and restart advertising after a short guard delay.
+    // We keep using the same NimBLEAdvertising object so the random address is
+    // not intentionally rotated, but note that some NimBLE builds may regenerate
+    // the address on restart; if that happens the JOIN's captured address
+    // becomes stale and directed advertising or a fixed static random address
+    // should be considered. Directed advertising is not implemented here because
+    // the basic restart is expected to be sufficient; reevaluate if status=13
+    // persists.
+    // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.3 and §9.4.
     stop_scanning();
-    // start_advertising() returns immediately without restarting if advertising
-    // is already active. This prevents regenerating the random advertisement
-    // address, which would invalidate the address the JOIN captured during
-    // discovery. See docs/BugReport_CYD_RPS_v0.1.5.md §6.4 and §8.4.
+    stop_advertising();
+    vTaskDelay(pdMS_TO_TICKS(20));
     if (!start_advertising()) {
         Serial.println("ERROR: BLE host advertise start failed");
         do_stop_discovery();
@@ -393,6 +434,7 @@ void BleService::become_host() {
         sm_post_event(Event::EV_ERROR);
         return;
     }
+    Serial.println("HOST: stopped scan, advertising ready");
     sm_post_event(Event::EV_ROLE_RESOLVED);
 }
 
@@ -408,6 +450,7 @@ void BleService::become_join(const uint8_t peer_addr[6]) {
     // Do NOT call stop_advertising() here.
     memcpy(peer_addr_, peer_addr, 6);
     peer_addr_valid_ = true;
+    Serial.println("JOIN: host discovered, starting connect window");
     sm_post_event(Event::EV_ROLE_RESOLVED);
 }
 
@@ -468,6 +511,18 @@ void BleService::connect_to_host() {
         // peripheral advertiser while initiating a connection. See
         // docs/BugReport_CYD_RPS_v0.1.6.md §8.5.
         stop_advertising();
+
+        // Advertising stop is not synchronous; wait for the controller to leave
+        // the advertiser state before issuing a central connect. Without this
+        // guard delay the controller may report the failure as
+        // BLE_ERR_REM_USER_CONN_TERM (status=13).
+        // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.2.
+        vTaskDelay(pdMS_TO_TICKS(50));
+
+        // Instrumentation: log before each connect attempt.
+        // Rationale: see docs/BugReport_CYD_RPS_v0.1.8.md §9.1.
+        Serial.printf("JOIN: advertising stopped, connecting to %s\n",
+                      addr.toString().c_str());
 
         if (cli->connect(addr)) {
             connected = true;

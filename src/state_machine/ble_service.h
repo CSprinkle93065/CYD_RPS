@@ -53,12 +53,13 @@ public:
     static constexpr int kConnectRetries = 4;
 
     // NimBLEClient::connect() default timeout is 30 s. When the controller
-    // reports a connect failure with status=13 (BLE_HS_ETIMEOUT, "Operation
-    // timed out."), waiting 30 s per retry makes the bounded retry window
-    // unusable. Reducing the timeout to 5 s lets the JOIN retry quickly and
-    // keeps total negotiation time under ~30 s including the discovery windows
-    // below. See docs/BugReport_CYD_RPS_v0.1.6.md §8.6 and
-    // docs/BugReport_CYD_RPS_v0.1.7.md §11.2.
+    // reports a connect failure with status=13 (BLE_ERR_REM_USER_CONN_TERM,
+    // "Remote User Terminated Connection"), waiting 30 s per retry makes the
+    // bounded retry window unusable. Reducing the timeout to 5 s lets the JOIN
+    // retry quickly and keeps total negotiation time under ~30 s including the
+    // discovery windows below. See docs/BugReport_CYD_RPS_v0.1.6.md §8.6,
+    // docs/BugReport_CYD_RPS_v0.1.7.md §11.2, and
+    // docs/BugReport_CYD_RPS_v0.1.8.md §7.1.
     static constexpr uint8_t kConnectTimeoutSeconds = 5;
 
     // Discovery window the JOIN keeps advertising after role resolution before

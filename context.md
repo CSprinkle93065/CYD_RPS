@@ -1,10 +1,10 @@
 # CYD_RPS — Release Context
 
 **Project:** CYD_RPS  
-**Version:** 0.1.8  
-**Workflow ID:** wvc_20260619_072600  
+**Version:** 0.1.9  
+**Workflow ID:** wvc_20260621_073822  
 **Revision Type:** bug_fix  
-**Release Date:** 2026-06-20  
+**Release Date:** 2026-06-21  
 **Board Version:** CYD2USB_v3 (ESP32-2432S028R)  
 **Target Environment:** hardware  
 **Branch:** main  
@@ -14,20 +14,20 @@
 
 ## Bug-Fix Summary
 
-This release fixes the BLE two-player discovery race reported in v0.1.7 (`docs/BugReport_CYD_RPS_v0.1.7.md` §7–§11.5).
+This release fixes the BLE connection-establishment race reported in `docs/BugReport_CYD_RPS_v0.1.8.md` §7.
 
-After v0.1.7 stopped the JOIN's advertising at the start of `connect_to_host()`, the peer that should become HOST often had not yet discovered the JOIN and therefore never resolved its role or stopped scanning. When the JOIN tried to connect, the HOST was still scanning and could not accept the connection, producing repeated `E NimBLEClient: Connection failed; status=13` (`BLE_HS_ETIMEOUT`) every 5 s. The real issue is a discovery race, not the timeout value.
+After v0.1.8 resolved the discovery half of the handshake, the JOIN still failed every `connect()` attempt with `status=13` (`BLE_ERR_REM_USER_CONN_TERM`). The remaining root causes were state-transition races on both sides: the JOIN called `connect()` immediately after `stop_advertising()` before the controller left the advertiser role, and the HOST continued using an advertisement started while scanning rather than restarting in a clean peripheral-only state.
 
 | Fix | Location | Details |
 |-----|----------|---------|
-| Guaranteed JOIN discovery window | `src/state_machine/ble_service.cpp` | After the JOIN resolves its role, `BleService::connect_to_host()` keeps advertising for `kJoinDiscoveryWindowMs` (2 s) before stopping advertising and initiating the first `connect()` attempt, giving the HOST time to discover the JOIN and resolve to HOST. |
-| Per-retry discovery window | `src/state_machine/ble_service.cpp` | On each failed `connect()` attempt (except the last), the JOIN restarts advertising, waits `kJoinConnectInterRetryWindowMs` (2 s), stops advertising, then retries `connect()`. This repeatedly gives the HOST new chances to discover and stop scanning. |
-| Stop advertising only immediately before connect | `src/state_machine/ble_service.cpp` | Advertising is kept running during every wait and is stopped only immediately before each `connect()` call. |
-| Dedicated radio task ownership | `src/state_machine/ble_service.cpp` | All scan/advertise/connect operations remain inside the radio-task `CONNECT_TO_HOST` command handler; the wait is implemented with `vTaskDelay()` inside the radio task, never with `delay()` in `AppStateMachine::update()`. |
-| Shortened advertising interval | `src/state_machine/ble_service.h` / `ble_service.cpp` | During peer search / role negotiation the JOIN advertises on a 20–30 ms interval (`kPeerSearchAdvMinInterval`/`kPeerSearchAdvMaxInterval` = 32/48 NimBLE units) so the HOST's scan window is more likely to hit an advertisement within each bounded window. |
-| In-file rationale comments | `src/state_machine/ble_service.cpp` / `ble_service.h` | Every changed constant/timeout has an adjacent comment citing `docs/BugReport_CYD_RPS_v0.1.7.md` §9.1–§9.3 and §11.2 (LL-043). |
+| Clear stale NimBLE bonds | `src/state_machine/ble_service.cpp` | `BleService::init()` calls `NimBLEDevice::deleteAllBonds()` (wrapped in `#ifndef WOKWI_SIMULATION`) before any discovery, eliminating stale IRK/bond records that could reject an incoming connection. |
+| Add handshake instrumentation | `src/state_machine/ble_service.cpp` | `Serial.printf`/`Serial.println` logs added in `on_peer_found()`, `resolve_role()`, `become_host()`, `become_join()`, and `connect_to_host()` so the two-board flow can be diagnosed from serial output. |
+| Restart HOST advertising after scan stop | `src/state_machine/ble_service.cpp` | `BleService::become_host()` stops scanning, stops advertising, waits `20 ms`, then restarts advertising, giving the HOST a clean peripheral-only connectable state. |
+| Guard delay before JOIN connect | `src/state_machine/ble_service.cpp` | `BleService::connect_to_host()` waits `50 ms` after `stop_advertising()` before each `NimBLEClient::connect()` attempt, removing the advertiser-teardown → central-connect race on the JOIN side. |
+| Correct `status=13` comment | `src/state_machine/ble_service.h` | The header comment now identifies `status=13` as `BLE_ERR_REM_USER_CONN_TERM` and references `docs/BugReport_CYD_RPS_v0.1.8.md` §7.1. |
+| Radio-task ownership preserved | `src/state_machine/ble_service.cpp` | All new `vTaskDelay()` calls run inside the dedicated BLE radio task command handlers, never on the LVGL/state-machine task. |
 
-This v0.1.7 fix preserves all v0.1.4–v0.1.6 fixes: GATT server start during `init()`, address-type capture in `peer_addr_type_`, dedicated BLE radio task, larger NimBLE host-task stack, heap guard, reduced LVGL memory, deferred discovery out of LVGL event context, thread-safe event queue, symmetric role negotiation using the public MAC, and the `WOKWI_SIMULATION` guard.
+This v0.1.9 fix preserves all v0.1.4–v0.1.8 fixes: GATT server start during `init()`, address-type capture in `peer_addr_type_`, dedicated BLE radio task, larger NimBLE host-task stack, heap guard, reduced LVGL memory, deferred discovery out of LVGL event context, thread-safe event queue, symmetric role negotiation using the public MAC, bounded JOIN discovery/retry windows, short peer-search advertising interval, stop-advertise-only-before-connect, and the `WOKWI_SIMULATION` guard.
 
 ---
 
@@ -35,7 +35,7 @@ This v0.1.7 fix preserves all v0.1.4–v0.1.6 fixes: GATT server start during `i
 
 | Artifact | Path |
 |----------|------|
-| Release ZIP | `projects/CYD_RPS/dist/CYD_RPS_v0.1.8.zip` |
+| Release ZIP | `projects/CYD_RPS/dist/CYD_RPS_v0.1.9.zip` |
 | Firmware binary | `firmware.bin` (inside ZIP and at `projects/CYD_RPS/.pio/build/esp32-2432s028r_cyd2usb/firmware.bin`) |
 | Build configuration | `platformio.ini` (inside ZIP) |
 | Flash scripts | `flash_esptool.bat`, `flash_esptool.sh`, `flash_cyd_rps.bat` (inside ZIP) |
@@ -49,7 +49,7 @@ ZIP contents verified:
 - `flash_esptool.sh`
 - `flash_cyd_rps.bat`
 
-Firmware size: 976,544 bytes.
+Firmware size: 977,584 bytes.
 
 ---
 
@@ -111,13 +111,13 @@ CYD_RPS setup done
 | Build (physical hardware environment) | PASS |
 | Build (Wokwi simulation environment) | PASS |
 | Host state-machine tests (40/40) | PASS |
-| Static analysis (`pio check`) | PASS |
+| Static analysis (`pio check`) | NOT EXECUTED — command exceeded 300 s timeout |
 | Distribution ZIP complete | PASS |
-| Bug-fix code review (JOIN connection resource conflict) | PASS |
+| Bug-fix code review (BLE connection-establishment race) | PASS |
 | Integration code review | PASS |
 | Wokwi smoke test | PASS |
 | Physical target tests | MANUAL / HARDWARE-ONLY — no board attached |
-| GitHub release | PASS — release `v0.1.8` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.8 with `firmware.bin` and `CYD_RPS_v0.1.8.zip` attached |
+| GitHub release | PASS — release `v0.1.9` created at https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.9 with `firmware.bin` and `CYD_RPS_v0.1.9.zip` attached |
 
 See `docs/qa_results.md` for the full QA report.
 
@@ -128,11 +128,11 @@ See `docs/qa_results.md` for the full QA report.
 **GitHub release created successfully.**
 
 - Repository: https://github.com/CSprinkle93065/CYD_RPS
-- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.8
-- Tag: `v0.1.8`
+- Release: https://github.com/CSprinkle93065/CYD_RPS/releases/tag/v0.1.9
+- Tag: `v0.1.9`
 - Attachments:
   - `firmware.bin`
-  - `CYD_RPS_v0.1.8.zip`
+  - `CYD_RPS_v0.1.9.zip`
 - Local commit and tag were pushed to `origin/main`.
 
 ---
